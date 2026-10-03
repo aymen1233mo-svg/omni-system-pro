@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { ReceiptPreview, MasterReceiptSlip, DeptReceiptSlip, ReceiptPrintArea } from "@/components/receipt";
 import { getOfflinePrintQueue, addOfflinePrintJob, removeOfflinePrintJob } from "@/lib/printQueue";
 import { ScannerDiagnosticDialog, ScanDiagnosticLog } from "@/components/scanner-diagnostic-dialog";
+import { EmployeeBalanceBlockModal } from "@/components/EmployeeBalanceBlockModal";
 import { Bug } from "lucide-react";
 
 type CartItem = {
@@ -645,6 +646,7 @@ export default function Pos() {
 
   // ── وجبات الموظفين ──
   const [showMealConfirm, setShowMealConfirm] = useState(false);
+  const [showBalanceBlockModal, setShowBalanceBlockModal] = useState(false);
   const [lookingUpEmp, setLookingUpEmp] = useState(false);
   const [offlineJobsCount, setOfflineJobsCount] = useState(0);
 
@@ -1597,7 +1599,19 @@ export default function Pos() {
       if (!resp.ok) throw new Error(await resp.text());
       const emp = await resp.json();
       setFoundEmployee(emp);
-      setShowMealConfirm(true);
+
+      const bal = Number(emp.balance || 0);
+      const lim = emp.credit_limit !== null && emp.credit_limit !== undefined ? Number(emp.credit_limit) : 20000;
+      const ded = Number(emp.meal_deductions_this_month || 0);
+      const avail = bal + lim - ded;
+      const allowExceed = Boolean(emp.allow_exceed_balance);
+      const blockInsufficient = emp.block_insufficient_balance !== undefined ? Boolean(emp.block_insufficient_balance) : true;
+
+      if (blockInsufficient && !allowExceed && !isPrivilegedUser && !supervisorAuthorized && total > avail && total > 0) {
+        setShowBalanceBlockModal(true);
+      } else {
+        setShowMealConfirm(true);
+      }
     } catch (e: any) {
       toast({ variant: "destructive", title: "لم يتم العثور على الموظف", description: "تحقق من رقم الموظف" });
     } finally {
@@ -1606,8 +1620,23 @@ export default function Pos() {
   };
 
   // ── تأكيد تسجيل الوجبة ──
-  const confirmMealDeduction = () => {
+  const confirmMealDeduction = (options?: { admin_override?: boolean }) => {
     if (!foundEmployee || cart.length === 0 || createOrderMutation.isPending) return;
+
+    const bal = Number(foundEmployee.balance || 0);
+    const lim = foundEmployee.credit_limit !== null && foundEmployee.credit_limit !== undefined ? Number(foundEmployee.credit_limit) : 20000;
+    const ded = Number(foundEmployee.meal_deductions_this_month || 0);
+    const avail = bal + lim - ded;
+    const allowExceed = Boolean(foundEmployee.allow_exceed_balance);
+    const blockInsufficient = foundEmployee.block_insufficient_balance !== undefined ? Boolean(foundEmployee.block_insufficient_balance) : true;
+    const isOverride = Boolean(options?.admin_override || isPrivilegedUser || supervisorAuthorized);
+
+    if (blockInsufficient && !allowExceed && !isOverride && total > avail) {
+      setShowMealConfirm(false);
+      setShowBalanceBlockModal(true);
+      return;
+    }
+
     const mealNote = `وجبة موظف: ${foundEmployee.name} (${foundEmployee.employee_number})`;
 
     const items: OrderItemInput[] = cart.map(i => ({
@@ -1633,8 +1662,10 @@ export default function Pos() {
         tableNumber: null,
         note: mealNote,
         safeId: selectedSafeId,
-        safe_id: selectedSafeId
-      }
+        safe_id: selectedSafeId,
+        admin_override: isOverride,
+        supervisor_authorized: isOverride
+      } as any
     }, {
       onSuccess: async (order) => {
         // تسجيل خصم الوجبة في سجل الموظف
@@ -1650,11 +1681,14 @@ export default function Pos() {
             invoice_number: order.invoiceNumber,
             amount: total,
             notes: `${cart.map(i => i.product.name).join(", ")}`,
+            admin_override: isOverride,
+            supervisor_authorized: isOverride
           }),
         });
         toast({ title: "✅ تم تسجيل وجبة الموظف", description: `${foundEmployee.name} — ${order.invoiceNumber}` });
         setLastOrder(order);
         setShowMealConfirm(false);
+        setShowBalanceBlockModal(false);
         setCart([]);
         setDiscount(0);
         setSupervisorAuthorized(false);
@@ -2484,6 +2518,30 @@ export default function Pos() {
         </DialogContent>
       </Dialog>
 
+      {/* Employee Balance Block Modal */}
+      <EmployeeBalanceBlockModal
+        open={showBalanceBlockModal}
+        onClose={() => {
+          setShowBalanceBlockModal(false);
+        }}
+        employee={foundEmployee}
+        orderTotal={total}
+        currency={currency}
+        isPrivilegedUser={isPrivilegedUser}
+        onAuthorizeAndProceed={(options) => {
+          setShowBalanceBlockModal(false);
+          if (foundEmployee) {
+            if (options?.permanentAllow) {
+              setFoundEmployee({ ...foundEmployee, allow_exceed_balance: 1 });
+            }
+            if (options?.newCreditLimit !== undefined) {
+              setFoundEmployee({ ...foundEmployee, credit_limit: options.newCreditLimit });
+            }
+          }
+          confirmMealDeduction({ admin_override: true });
+        }}
+      />
+
       {/* Meal Deduction Confirm Dialog */}
       <Dialog open={showMealConfirm} onOpenChange={v => { if (!v) { setShowMealConfirm(false); setFoundEmployee(null); } }}>
         <DialogContent dir="rtl" className="max-w-sm">
@@ -2522,7 +2580,7 @@ export default function Pos() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowMealConfirm(false); setFoundEmployee(null); }}>إلغاء</Button>
-            <Button onClick={confirmMealDeduction} disabled={createOrderMutation.isPending} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={() => confirmMealDeduction()} disabled={createOrderMutation.isPending} className="bg-amber-600 hover:bg-amber-700">
               <UtensilsCrossed className="w-4 h-4 me-2" />تأكيد الوجبة
             </Button>
           </DialogFooter>
@@ -2679,6 +2737,19 @@ export default function Pos() {
                     setFoundEmployee(emp);
                     setShowEmpPicker(false);
                     setEmpPickerSearch("");
+
+                    const bal = Number(emp.balance || 0);
+                    const lim = emp.credit_limit !== null && emp.credit_limit !== undefined ? Number(emp.credit_limit) : 20000;
+                    const ded = Number(emp.meal_deductions_this_month || 0);
+                    const avail = bal + lim - ded;
+                    const allowExceed = Boolean(emp.allow_exceed_balance);
+                    const blockInsufficient = emp.block_insufficient_balance !== undefined ? Boolean(emp.block_insufficient_balance) : true;
+
+                    if (blockInsufficient && !allowExceed && !isPrivilegedUser && !supervisorAuthorized && total > avail && total > 0) {
+                      setShowBalanceBlockModal(true);
+                    } else {
+                      setShowMealConfirm(true);
+                    }
                   }}
                   className="bg-white border rounded-lg p-3 flex items-center justify-between gap-2 hover:border-amber-500 hover:bg-amber-50/50 transition-colors cursor-pointer shadow-2xs"
                 >

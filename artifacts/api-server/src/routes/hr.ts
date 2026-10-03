@@ -74,7 +74,10 @@ router.post("/hr/employees", (req, res) => {
   if (!requireAdmin(req, res)) return;
   
   try {
-    let { employee_number, name, phone, position, department_id, basic_salary, hire_date, active } = req.body;
+    let { 
+      employee_number, name, phone, position, department_id, basic_salary, hire_date, active,
+      credit_limit, balance, allow_exceed_balance, block_insufficient_balance
+    } = req.body;
     
     if (!name || name.trim() === "") { 
       res.status(400).json({ error: "اسم الموظف مطلوب" }); 
@@ -115,8 +118,11 @@ router.post("/hr/employees", (req, res) => {
     }
 
     const r = db.prepare(`
-      INSERT INTO hr_employees (employee_number, name, phone, position, department_id, basic_salary, hire_date, active)
-      VALUES (?,?,?,?,?,?,?,?)
+      INSERT INTO hr_employees (
+        employee_number, name, phone, position, department_id, basic_salary, hire_date, active,
+        credit_limit, balance, allow_exceed_balance, block_insufficient_balance
+      )
+      VALUES (?,?,?,?,?,?,?,?, ?,?,?,?)
     `).run(
       employee_number, 
       name.trim(), 
@@ -125,7 +131,11 @@ router.post("/hr/employees", (req, res) => {
       department_id || null, 
       Number(basic_salary) || 0, 
       hire_date || new Date().toISOString().split('T')[0], 
-      active === false ? 0 : 1
+      active === false ? 0 : 1,
+      credit_limit !== undefined ? Number(credit_limit) : 20000,
+      balance !== undefined ? Number(balance) : 0,
+      allow_exceed_balance ? 1 : 0,
+      block_insufficient_balance !== undefined ? (block_insufficient_balance ? 1 : 0) : 1
     );
 
     const employeeId = Number(r.lastInsertRowid);
@@ -170,11 +180,33 @@ router.post("/hr/employees", (req, res) => {
 
 router.put("/hr/employees/:id", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const { employee_number, name, phone, position, department_id, basic_salary, hire_date, active } = req.body;
+  const { 
+    employee_number, name, phone, position, department_id, basic_salary, hire_date, active,
+    credit_limit, balance, allow_exceed_balance, block_insufficient_balance
+  } = req.body;
   db.prepare(`
-    UPDATE hr_employees SET employee_number=?, name=?, phone=?, position=?, department_id=?, basic_salary=?, hire_date=?, active=?
+    UPDATE hr_employees SET 
+      employee_number=?, name=?, phone=?, position=?, department_id=?, basic_salary=?, hire_date=?, active=?,
+      credit_limit=COALESCE(?, credit_limit, 20000),
+      balance=COALESCE(?, balance, 0),
+      allow_exceed_balance=COALESCE(?, allow_exceed_balance, 0),
+      block_insufficient_balance=COALESCE(?, block_insufficient_balance, 1)
     WHERE id=?
-  `).run(employee_number, name, phone ?? null, position ?? null, department_id ?? null, basic_salary ?? 0, hire_date ?? null, active !== false ? 1 : 0, req.params.id);
+  `).run(
+    employee_number, 
+    name, 
+    phone ?? null, 
+    position ?? null, 
+    department_id ?? null, 
+    basic_salary ?? 0, 
+    hire_date ?? null, 
+    active !== false ? 1 : 0,
+    credit_limit !== undefined ? Number(credit_limit) : null,
+    balance !== undefined ? Number(balance) : null,
+    allow_exceed_balance !== undefined ? (allow_exceed_balance ? 1 : 0) : null,
+    block_insufficient_balance !== undefined ? (block_insufficient_balance ? 1 : 0) : null,
+    req.params.id
+  );
 
   // Post-employee creation/update cleanup: if a customer with the same name exists, delete it and remap its account
   try {
@@ -199,10 +231,69 @@ router.put("/hr/employees/:id", (req, res) => {
   }
 
   const emp = db.prepare(`
-    SELECT e.*, d.name as department_name FROM hr_employees e
-    LEFT JOIN hr_departments d ON d.id=e.department_id WHERE e.id=?
+    SELECT e.*, d.name as department_name,
+      (SELECT COALESCE(SUM(md.amount),0) FROM meal_deductions md WHERE md.employee_id=e.id AND strftime('%Y-%m', md.created_at)=strftime('%Y-%m','now')) as meal_deductions_this_month
+    FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id WHERE e.id=?
   `).get(req.params.id) as any;
-  res.json({ ...emp, active: Boolean(emp.active) });
+  const bal = Number(emp?.balance || 0);
+  const lim = Number(emp?.credit_limit ?? 20000);
+  const ded = Number(emp?.meal_deductions_this_month || 0);
+  res.json({ 
+    ...emp, 
+    active: Boolean(emp.active),
+    available_balance: bal + lim - ded
+  });
+});
+
+/* ── Specific Admin Endpoint to Control Employee Credit & Allowance ── */
+router.patch("/hr/employees/:id/credit-controls", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  if (user.role !== "admin" && user.role !== "manager" && user.role !== "developer") {
+    res.status(403).json({ error: "هذه الصلاحية مقتصرة على مدير النظام والمشرفين فقط" });
+    return;
+  }
+  const { credit_limit, allow_exceed_balance, block_insufficient_balance, balance } = req.body;
+  const updates: string[] = [];
+  const params: any[] = [];
+  if (credit_limit !== undefined) {
+    updates.push("credit_limit = ?");
+    params.push(Number(credit_limit));
+  }
+  if (allow_exceed_balance !== undefined) {
+    updates.push("allow_exceed_balance = ?");
+    params.push(allow_exceed_balance ? 1 : 0);
+  }
+  if (block_insufficient_balance !== undefined) {
+    updates.push("block_insufficient_balance = ?");
+    params.push(block_insufficient_balance ? 1 : 0);
+  }
+  if (balance !== undefined) {
+    updates.push("balance = ?");
+    params.push(Number(balance));
+  }
+  if (updates.length > 0) {
+    params.push(req.params.id);
+    db.prepare(`UPDATE hr_employees SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  }
+  const emp = db.prepare(`
+    SELECT e.*, d.name as department_name,
+      (SELECT COALESCE(SUM(md.amount),0) FROM meal_deductions md WHERE md.employee_id=e.id AND strftime('%Y-%m', md.created_at)=strftime('%Y-%m','now')) as meal_deductions_this_month
+    FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id
+    WHERE e.id=?
+  `).get(req.params.id) as any;
+  const bal = Number(emp?.balance || 0);
+  const lim = Number(emp?.credit_limit ?? 20000);
+  const ded = Number(emp?.meal_deductions_this_month || 0);
+  res.json({
+    success: true,
+    message: "تم تحديث صلاحيات وسقف رصيد الموظف بنجاح",
+    employee: {
+      ...emp,
+      active: Boolean(emp?.active),
+      available_balance: bal + lim - ded
+    }
+  });
 });
 
 router.delete("/hr/employees/:id", (req, res) => {
@@ -371,6 +462,37 @@ router.post("/hr/meal-deductions", (req, res) => {
     }
   }
 
+  // ── Employee Balance & Credit Limit Check ──
+  const emp = db.prepare("SELECT * FROM hr_employees WHERE id = ?").get(employee_id) as any;
+  if (emp) {
+    const balance = Number(emp.balance || 0);
+    const creditLimit = (emp.credit_limit !== null && emp.credit_limit !== undefined) ? Number(emp.credit_limit) : 20000;
+    const allowExceed = Boolean(emp.allow_exceed_balance);
+    const blockInsufficient = emp.block_insufficient_balance !== undefined ? Boolean(emp.block_insufficient_balance) : true;
+
+    const deductions = db.prepare(`
+      SELECT COALESCE(SUM(amount),0) as sum 
+      FROM meal_deductions 
+      WHERE employee_id=? AND strftime('%Y-%m', created_at)=strftime('%Y-%m','now')
+    `).get(employee_id) as any;
+    const currentMonthDeductions = Number(deductions?.sum || 0);
+    const available = balance + creditLimit - currentMonthDeductions;
+    const isOverride = Boolean(req.body.admin_override || req.body.supervisor_authorized);
+
+    if (blockInsufficient && !allowExceed && !isOverride && Number(amount || 0) > available) {
+      return res.status(403).json({
+        error: `تم منع قطع وجبة الموظف (${emp.name}) لأن رصيد الموظف وسقف الائتمان لا يسمحان بالقطع (الرصيد المتاح: ${available.toLocaleString()} ريال، والمطلوب: ${Number(amount || 0).toLocaleString()} ريال)`,
+        reason: "insufficient_employee_balance",
+        employee_id: emp.id,
+        employee_name: emp.name,
+        available_balance: available,
+        credit_limit: creditLimit,
+        requested_amount: Number(amount || 0),
+        shortfall: Number(amount || 0) - available
+      });
+    }
+  }
+
   const r = db.prepare(`
     INSERT INTO meal_deductions (employee_id, employee_name, employee_number, order_id, invoice_number, amount, cashier_id, cashier_name, notes)
     VALUES (?,?,?,?,?,?,?,?,?)
@@ -409,10 +531,27 @@ router.get("/hr/employees/by-number/:num", (req, res) => {
     SELECT e.*, d.name as department_name,
       (SELECT COALESCE(SUM(md.amount),0) FROM meal_deductions md WHERE md.employee_id=e.id AND strftime('%Y-%m', md.created_at)=strftime('%Y-%m','now')) as meal_deductions_this_month
     FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id
-    WHERE e.employee_number=? AND e.active=1
-  `).get(req.params.num) as any;
+    WHERE (e.employee_number=? OR e.id=?) AND e.active=1
+  `).get(req.params.num, req.params.num) as any;
   if (!emp) { res.status(404).json({ error: "الموظف غير موجود أو غير نشط" }); return; }
-  res.json({ ...emp, active: Boolean(emp.active) });
+
+  const balance = Number(emp.balance || 0);
+  const creditLimit = (emp.credit_limit !== null && emp.credit_limit !== undefined) ? Number(emp.credit_limit) : 20000;
+  const allowExceedBalance = Boolean(emp.allow_exceed_balance);
+  const blockInsufficient = emp.block_insufficient_balance !== undefined ? Boolean(emp.block_insufficient_balance) : true;
+  const mealDeductionsThisMonth = Number(emp.meal_deductions_this_month || 0);
+  const availableBalance = balance + creditLimit - mealDeductionsThisMonth;
+
+  res.json({
+    ...emp,
+    active: Boolean(emp.active),
+    balance,
+    credit_limit: creditLimit,
+    allow_exceed_balance: allowExceedBalance,
+    block_insufficient_balance: blockInsufficient,
+    meal_deductions_this_month: mealDeductionsThisMonth,
+    available_balance: availableBalance,
+  });
 });
 
 /* ── Salary Statement Data (for A4 print) ── */

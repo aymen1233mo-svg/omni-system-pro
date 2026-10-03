@@ -74,7 +74,8 @@ router.get(["/employees", "/hr/employees"], (req, res) => {
   try {
     const { search, role, department_id } = req.query;
     let sql = `
-      SELECT e.*, d.name as department_name
+      SELECT e.*, d.name as department_name,
+        (SELECT COALESCE(SUM(md.amount),0) FROM meal_deductions md WHERE md.employee_id=e.id AND strftime('%Y-%m', md.created_at)=strftime('%Y-%m','now')) as meal_deductions_this_month
       FROM hr_employees e
       LEFT JOIN hr_departments d ON d.id = e.department_id
       WHERE 1=1
@@ -94,7 +95,20 @@ router.get(["/employees", "/hr/employees"], (req, res) => {
     }
     sql += " ORDER BY CAST(e.employee_number AS INTEGER) ASC, e.id ASC";
     const rows = db.prepare(sql).all(...params) as any[];
-    res.json(rows.map(e => ({ ...e, active: Boolean(e.active) })));
+    res.json(rows.map(e => {
+      const bal = Number(e.balance || 0);
+      const lim = e.credit_limit !== null && e.credit_limit !== undefined ? Number(e.credit_limit) : 20000;
+      const ded = Number(e.meal_deductions_this_month || 0);
+      return {
+        ...e,
+        active: Boolean(e.active),
+        credit_limit: lim,
+        balance: bal,
+        allow_exceed_balance: Boolean(e.allow_exceed_balance),
+        block_insufficient_balance: e.block_insufficient_balance !== undefined ? Boolean(e.block_insufficient_balance) : true,
+        available_balance: bal + lim - ded
+      };
+    }));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -270,7 +284,11 @@ const handleUpdateEmployee = (req: any, res: any) => {
       job_title,
       commission_rate,
       commission_basis,
-      sales_target
+      sales_target,
+      credit_limit,
+      balance,
+      allow_exceed_balance,
+      block_insufficient_balance
     } = req.body;
 
     const emp = db.prepare("SELECT * FROM hr_employees WHERE id = ?").get(req.params.id) as any;
@@ -322,7 +340,11 @@ const handleUpdateEmployee = (req: any, res: any) => {
           job_title = COALESCE(?, job_title),
           commission_rate = COALESCE(?, commission_rate),
           commission_basis = COALESCE(?, commission_basis),
-          sales_target = COALESCE(?, sales_target)
+          sales_target = COALESCE(?, sales_target),
+          credit_limit = COALESCE(?, credit_limit, 20000),
+          balance = COALESCE(?, balance, 0),
+          allow_exceed_balance = COALESCE(?, allow_exceed_balance, 0),
+          block_insufficient_balance = COALESCE(?, block_insufficient_balance, 1)
       WHERE id = ?
     `).run(
       cleanEmpNum,
@@ -338,6 +360,10 @@ const handleUpdateEmployee = (req: any, res: any) => {
       commission_rate !== undefined ? Number(commission_rate) : null,
       commission_basis || null,
       sales_target !== undefined ? Number(sales_target) : null,
+      credit_limit !== undefined ? Number(credit_limit) : null,
+      balance !== undefined ? Number(balance) : null,
+      allow_exceed_balance !== undefined ? (allow_exceed_balance ? 1 : 0) : null,
+      block_insufficient_balance !== undefined ? (block_insufficient_balance ? 1 : 0) : null,
       req.params.id
     );
 

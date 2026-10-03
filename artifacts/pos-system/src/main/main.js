@@ -28,24 +28,13 @@ app.on('before-quit', () => {
 
 // 1. تأمين وحماية التطبيق من الانهيار الصامت (Global Exception Handlers)
 process.on('uncaughtException', (err) => {
-  try {
-    console.error('Uncaught Exception:', err);
-    dialog.showErrorBox('Omni System Pro ERP - Uncaught Exception', err.stack || err.message || String(err));
-  } catch (e) {
-    console.error('Failed to show error dialog:', e);
-  }
-  app.quit();
+  console.error('Non-fatal Uncaught Exception in Electron Main:', err);
+  // Log and keep application resilient unless fatal exit required
 });
 
 process.on('unhandledRejection', (reason) => {
-  try {
-    console.error('Unhandled Rejection:', reason);
-    const msg = reason instanceof Error ? reason.stack || reason.message : String(reason);
-    dialog.showErrorBox('Omni System Pro ERP - Unhandled Rejection', msg);
-  } catch (e) {
-    console.error('Failed to show rejection dialog:', e);
-  }
-  app.quit();
+  console.warn('Unhandled Rejection in Electron Main (Recovered):', reason);
+  // Do not kill the application on unhandled async promises
 });
 
 let mainWindow = null;

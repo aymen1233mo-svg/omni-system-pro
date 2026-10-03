@@ -11,6 +11,9 @@ export function runErpAccountingSync(db: BetterSqliteDatabase): void {
     try { db.exec("ALTER TABLE customers ADD COLUMN account_code TEXT"); } catch {}
     try { db.exec("ALTER TABLE hr_employees ADD COLUMN account_code TEXT"); } catch {}
     try { db.exec("ALTER TABLE hr_employees ADD COLUMN balance REAL DEFAULT 0"); } catch {}
+    try { db.exec("ALTER TABLE hr_employees ADD COLUMN credit_limit REAL DEFAULT 20000"); } catch {}
+    try { db.exec("ALTER TABLE hr_employees ADD COLUMN allow_exceed_balance INTEGER DEFAULT 0"); } catch {}
+    try { db.exec("ALTER TABLE hr_employees ADD COLUMN block_insufficient_balance INTEGER DEFAULT 1"); } catch {}
     try { db.exec("ALTER TABLE orders ADD COLUMN employee_id INTEGER"); } catch {}
 
     // 1. Ensure standard Omni System Pro ERP Chart of Accounts names & structure

@@ -33,7 +33,13 @@ const TAB_LABELS: Record<Tab, string> = {
 
 function fetchWithAuth<T>(url: string): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
-  return fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+  return fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then(async r => {
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${r.status}`);
+    }
+    return r.json();
+  });
 }
 
 function fmt(n: number) { return Number(n ?? 0).toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -91,12 +97,23 @@ export default function Reports() {
   };
 
   const dateParams = `?startDate=${startDate}&endDate=${endDate}`;
-  const { data: salesRows = [], isLoading: isSalesLoading } = useGetSalesReport({ startDate, endDate, groupBy });
-  const { data: cashierRows = [] } = useQuery<any[]>({ queryKey: ["reports-cashier", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-cashier${dateParams}`) });
-  const { data: warehouseSalesRows = [] } = useQuery<any[]>({ queryKey: ["reports-warehouse-sales", startDate, endDate], queryFn: () => fetchWithAuth(`/api/warehouse-invoices`) });
-  const { data: productRows = [] } = useQuery<any[]>({ queryKey: ["reports-product", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-product${dateParams}`) });
-  const { data: categoryRows = [] } = useQuery<any[]>({ queryKey: ["reports-category", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-category${dateParams}`) });
-  const { data: paymentRows = [] } = useQuery<any[]>({ queryKey: ["reports-payment", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-payment${dateParams}`) });
+  const { data: rawSalesRows = [], isLoading: isSalesLoading } = useGetSalesReport({ startDate, endDate, groupBy });
+  const salesRows = Array.isArray(rawSalesRows) ? rawSalesRows : [];
+
+  const { data: rawCashierRows = [] } = useQuery<any[]>({ queryKey: ["reports-cashier", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-cashier${dateParams}`) });
+  const cashierRows = Array.isArray(rawCashierRows) ? rawCashierRows : [];
+
+  const { data: rawWarehouseSalesRows = [] } = useQuery<any[]>({ queryKey: ["reports-warehouse-sales", startDate, endDate], queryFn: () => fetchWithAuth(`/api/warehouse-invoices`) });
+  const warehouseSalesRows = Array.isArray(rawWarehouseSalesRows) ? rawWarehouseSalesRows : [];
+
+  const { data: rawProductRows = [] } = useQuery<any[]>({ queryKey: ["reports-product", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-product${dateParams}`) });
+  const productRows = Array.isArray(rawProductRows) ? rawProductRows : [];
+
+  const { data: rawCategoryRows = [] } = useQuery<any[]>({ queryKey: ["reports-category", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-category${dateParams}`) });
+  const categoryRows = Array.isArray(rawCategoryRows) ? rawCategoryRows : [];
+
+  const { data: rawPaymentRows = [] } = useQuery<any[]>({ queryKey: ["reports-payment", startDate, endDate], queryFn: () => fetchWithAuth(`/api/reports/by-payment${dateParams}`) });
+  const paymentRows = Array.isArray(rawPaymentRows) ? rawPaymentRows : [];
   const { data: settings } = useQuery<any>({ queryKey: ["settings"], queryFn: () => fetchWithAuth("/api/settings") });
   const { data: printerSettings } = useQuery<any>({ queryKey: ["printerSettings"], queryFn: () => fetchWithAuth("/api/printer-settings") });
 

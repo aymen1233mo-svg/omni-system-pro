@@ -149,11 +149,12 @@ router.post("/orders", (req, res) => {
   try {
     const authUser = getAuthUser(req);
     if (!authUser) { res.status(401).json({ error: "غير مصرح - يرجى تسجيل الدخول" }); return; }
-    const { items, paymentMethod, subtotal, discount, tax, total, cashAmount, cardAmount, customerId, supplierId, supplier_id, userId, note, orderType, tableNumber, safeId, safe_id } = req.body;
+    const { items, paymentMethod, subtotal, discount, tax, total, cashAmount, cardAmount, customerId, supplierId, supplier_id, userId, note, orderType, tableNumber, safeId, safe_id, employeeId, employee_id, admin_override, supervisor_authorized } = req.body;
     if (!items?.length) { res.status(400).json({ error: "لا توجد منتجات في الفاتورة" }); return; }
 
     const effectiveUserId = userId ?? authUser.id;
     const effectiveSupplierId = supplierId ?? supplier_id ? Number(supplierId ?? supplier_id) : null;
+    let effectiveEmployeeId: number | null = (employeeId ?? employee_id) ? Number(employeeId ?? employee_id) : null;
     // Look for either safeId or safe_id, default to 1 or existing safe
     const parsedSafeId = Number(safeId ?? safe_id);
     let effectiveSafeId = (!isNaN(parsedSafeId) && parsedSafeId > 0) ? parsedSafeId : 1;
@@ -185,7 +186,9 @@ router.post("/orders", (req, res) => {
     const createdAt = new Date().toISOString();
 
     let effectiveCustomerId = customerId ? Number(customerId) : null;
-    let effectiveEmployeeId: number | null = null;
+    if (!effectiveEmployeeId && (employeeId || employee_id)) {
+      effectiveEmployeeId = Number(employeeId ?? employee_id);
+    }
 
     if (note && (note.includes("وجبة موظف") || note.includes("وجبة"))) {
       try {
@@ -212,6 +215,39 @@ router.post("/orders", (req, res) => {
         }
       } catch (e) {
         console.warn("Failed to auto-link employee customer record:", e);
+      }
+    }
+
+    // ── Employee Balance & Credit Limit Verification (منع القطع إذا كان رصيد الموظف لا يسمح) ──
+    if (effectiveEmployeeId) {
+      const emp = db.prepare("SELECT * FROM hr_employees WHERE id = ?").get(effectiveEmployeeId) as any;
+      if (emp) {
+        const balance = Number(emp.balance || 0);
+        const creditLimit = emp.credit_limit !== null && emp.credit_limit !== undefined ? Number(emp.credit_limit) : 20000;
+        const allowExceed = Boolean(emp.allow_exceed_balance);
+        const blockInsufficient = emp.block_insufficient_balance !== undefined ? Boolean(emp.block_insufficient_balance) : true;
+
+        const deductions = db.prepare(`
+          SELECT COALESCE(SUM(amount),0) as sum 
+          FROM meal_deductions 
+          WHERE employee_id=? AND strftime('%Y-%m', created_at)=strftime('%Y-%m','now')
+        `).get(effectiveEmployeeId) as any;
+        const currentMonthDeductions = Number(deductions?.sum || 0);
+        const available = balance + creditLimit - currentMonthDeductions;
+        const isOverride = Boolean(admin_override || supervisor_authorized);
+
+        if (blockInsufficient && !allowExceed && !isOverride && Number(total || 0) > available) {
+          return res.status(403).json({
+            error: `تم منع قطع الطلب للموظف (${emp.name}) لأن رصيد الموظف لا يسمح (الرصيد المتاح: ${available.toLocaleString()} ريال، والمطلوب: ${Number(total || 0).toLocaleString()} ريال)`,
+            reason: "insufficient_employee_balance",
+            employee_id: emp.id,
+            employee_name: emp.name,
+            available_balance: available,
+            credit_limit: creditLimit,
+            requested_total: Number(total || 0),
+            shortfall: Number(total || 0) - available
+          });
+        }
       }
     }
 

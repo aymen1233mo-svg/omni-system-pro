@@ -150,7 +150,11 @@ function EmployeesTab() {
   const { data: depts = [] } = useQuery({ queryKey: ["hr-depts"], queryFn: () => apiGet("/api/hr/departments") });
   const [showDlg, setShowDlg] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const emptyForm = { employee_number: "", name: "", phone: "", position: "", department_id: "", basic_salary: "", hire_date: "", active: true };
+  const emptyForm = { 
+    employee_number: "", name: "", phone: "", position: "", department_id: "", 
+    basic_salary: "", hire_date: "", active: true,
+    credit_limit: "20000", balance: "0", allow_exceed_balance: false, block_insufficient_balance: true
+  };
   const [form, setForm] = useState(emptyForm);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["hr-employees"] });
@@ -161,7 +165,11 @@ function EmployeesTab() {
       const data = { 
         ...f, 
         department_id: (f.department_id && !isNaN(Number(f.department_id))) ? Number(f.department_id) : (f.department_id || null),
-        basic_salary: Number(f.basic_salary) 
+        basic_salary: Number(f.basic_salary),
+        credit_limit: Number(f.credit_limit || 20000),
+        balance: Number(f.balance || 0),
+        allow_exceed_balance: Boolean(f.allow_exceed_balance),
+        block_insufficient_balance: Boolean(f.block_insufficient_balance)
       };
       return editing ? apiPut(`/api/hr/employees/${editing.id}`, data) : apiPost("/api/hr/employees", data);
     },
@@ -183,12 +191,32 @@ function EmployeesTab() {
   };
 
   const openAdd = () => { setEditing(null); setForm({ ...emptyForm, employee_number: getNextEmployeeNumber() }); setShowDlg(true); };
-  const openEdit = (e: any) => { setEditing(e); setForm({ employee_number: String(e.employee_number || "").replace(/\D/g, "") || String(e.id || 1), name: e.name, phone: e.phone ?? "", position: e.position ?? "", department_id: e.department_id ? String(e.department_id) : "", basic_salary: String(e.basic_salary), hire_date: e.hire_date ?? "", active: Boolean(e.active) }); setShowDlg(true); };
+  const openEdit = (e: any) => { 
+    setEditing(e); 
+    setForm({ 
+      employee_number: String(e.employee_number || "").replace(/\D/g, "") || String(e.id || 1), 
+      name: e.name, 
+      phone: e.phone ?? "", 
+      position: e.position ?? "", 
+      department_id: e.department_id ? String(e.department_id) : "", 
+      basic_salary: String(e.basic_salary), 
+      hire_date: e.hire_date ?? "", 
+      active: Boolean(e.active),
+      credit_limit: String(e.credit_limit ?? 20000),
+      balance: String(e.balance ?? 0),
+      allow_exceed_balance: Boolean(e.allow_exceed_balance),
+      block_insufficient_balance: e.block_insufficient_balance !== undefined ? Boolean(e.block_insufficient_balance) : true
+    }); 
+    setShowDlg(true); 
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">الموظفون</h2>
+        <div>
+          <h2 className="text-lg font-semibold">الموظفون وإدارة الائتمان وسقوف الرصيد</h2>
+          <p className="text-xs text-muted-foreground">التحكم في بيانات الموظفين، الرواتب، وسقوف قطع الطلبات والوجبات</p>
+        </div>
         <Button onClick={openAdd} size="sm" className="gap-2"><Plus className="w-4 h-4" />إضافة موظف</Button>
       </div>
       {isLoading ? <div className="text-center py-8 text-muted-foreground">جاري التحميل...</div> : (
@@ -201,6 +229,9 @@ function EmployeesTab() {
                 <th className="text-right p-3 font-semibold">المنصب</th>
                 <th className="text-right p-3 font-semibold">القسم</th>
                 <th className="text-right p-3 font-semibold">الراتب الأساسي</th>
+                <th className="text-right p-3 font-semibold">سقف الائتمان (الحد)</th>
+                <th className="text-right p-3 font-semibold">الرصيد المتاح للقطع</th>
+                <th className="text-right p-3 font-semibold">صلاحية التجاوز</th>
                 <th className="text-right p-3 font-semibold">الحالة</th>
                 <th className="p-3 w-20"></th>
               </tr>
@@ -213,6 +244,23 @@ function EmployeesTab() {
                   <td className="p-3 text-muted-foreground">{e.position ?? "—"}</td>
                   <td className="p-3">{e.department_name ?? "—"}</td>
                   <td className="p-3 text-primary font-mono">{fmt(e.basic_salary)}</td>
+                  <td className="p-3 font-mono font-bold text-slate-800">{fmt(e.credit_limit ?? 20000)}</td>
+                  <td className="p-3 font-mono font-bold">
+                    <span className={Number(e.available_balance ?? 0) <= 0 ? "text-red-600" : "text-emerald-600"}>
+                      {fmt(e.available_balance ?? ((Number(e.balance || 0) + Number(e.credit_limit ?? 20000)) - Number(e.meal_deductions_this_month || 0)))}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    {e.allow_exceed_balance ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        مسموح بالقطع دائماً
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        مقيد بالرصيد
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3"><Badge variant={e.active ? "default" : "secondary"}>{e.active ? "نشط" : "غير نشط"}</Badge></td>
                   <td className="p-3">
                     <div className="flex gap-2 justify-end">
@@ -222,52 +270,127 @@ function EmployeesTab() {
                   </td>
                 </tr>
               ))}
-              {((employees as any[]) || []).length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">لا يوجد موظفون</td></tr>}
+              {((employees as any[]) || []).length === 0 && <tr><td colSpan={10} className="p-6 text-center text-muted-foreground">لا يوجد موظفون</td></tr>}
             </tbody>
           </table>
         </div>
       )}
       <Dialog open={showDlg} onOpenChange={setShowDlg}>
-        <DialogContent className="max-w-lg" dir="rtl">
-          <DialogHeader><DialogTitle>{editing ? "تعديل موظف" : "إضافة موظف"}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-sm font-medium">رقم الموظف</label><Input type="number" min="1" step="1" value={form.employee_number} onChange={e => setForm(f => ({ ...f, employee_number: e.target.value.replace(/\D/g, "") }))} placeholder={editing ? "" : "يُنشأ تلقائياً (1, 2, 3...)"} className="mt-1 font-mono" /></div>
-            <div><label className="text-sm font-medium">الاسم *</label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الموظف" className="mt-1" /></div>
-            <div><label className="text-sm font-medium">رقم الهاتف</label><Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="05xxxxxxxx" className="mt-1" /></div>
-            <div><label className="text-sm font-medium">المنصب الوظيفي</label><Input value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} placeholder="مثال: محاسب" className="mt-1" /></div>
-            <div>
-              <label className="text-sm font-medium">القسم</label>
-              {!depts.some((d:any) => String(d.id) === form.department_id) && form.department_id !== "" ? (
-                <div className="flex gap-2 mt-1">
-                  <Input value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))} placeholder="اسم القسم الجديد" autoFocus />
-                  <Button variant="ghost" size="icon" onClick={() => setForm(f => ({...f, department_id: ""}))}><Trash2 className="w-4 h-4 text-destructive" /></Button>
-                </div>
-              ) : (
-                <Select value={form.department_id} onValueChange={v => {
-                  if (v === "new") {
-                    setForm(f => ({ ...f, department_id: "قسم جديد..." }));
-                  } else {
-                    setForm(f => ({ ...f, department_id: v }));
-                  }
-                }}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="اختر القسم" /></SelectTrigger>
-                  <SelectContent>
-                    {((depts as any[]) || []).map((d: any) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
-                    <SelectItem value="new" className="text-primary font-bold">➕ إضافة قسم جديد يدوياً</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
+        <DialogContent className="max-w-xl" dir="rtl">
+          <DialogHeader><DialogTitle>{editing ? "تعديل بيانات وصلاحيات الموظف" : "إضافة موظف جديد"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-sm font-medium">رقم الموظف</label><Input type="number" min="1" step="1" value={form.employee_number} onChange={e => setForm(f => ({ ...f, employee_number: e.target.value.replace(/\D/g, "") }))} placeholder={editing ? "" : "يُنشأ تلقائياً (1, 2, 3...)"} className="mt-1 font-mono" /></div>
+              <div><label className="text-sm font-medium">الاسم *</label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الموظف" className="mt-1" /></div>
+              <div><label className="text-sm font-medium">رقم الهاتف</label><Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="05xxxxxxxx" className="mt-1" /></div>
+              <div><label className="text-sm font-medium">المنصب الوظيفي</label><Input value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} placeholder="مثال: محاسب" className="mt-1" /></div>
+              <div>
+                <label className="text-sm font-medium">القسم</label>
+                {!depts.some((d:any) => String(d.id) === form.department_id) && form.department_id !== "" ? (
+                  <div className="flex gap-2 mt-1">
+                    <Input value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))} placeholder="اسم القسم الجديد" autoFocus />
+                    <Button variant="ghost" size="icon" onClick={() => setForm(f => ({...f, department_id: ""}))}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                  </div>
+                ) : (
+                  <Select value={form.department_id} onValueChange={v => {
+                    if (v === "new") {
+                      setForm(f => ({ ...f, department_id: "قسم جديد..." }));
+                    } else {
+                      setForm(f => ({ ...f, department_id: v }));
+                    }
+                  }}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="اختر القسم" /></SelectTrigger>
+                    <SelectContent>
+                      {((depts as any[]) || []).map((d: any) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                      <SelectItem value="new" className="text-primary font-bold">➕ إضافة قسم جديد يدوياً</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div><label className="text-sm font-medium">الراتب الأساسي</label><Input type="number" value={form.basic_salary} onChange={e => setForm(f => ({ ...f, basic_salary: e.target.value }))} placeholder="0" className="mt-1" /></div>
+              <div><label className="text-sm font-medium">تاريخ التعيين</label><Input type="date" value={form.hire_date} onChange={e => setForm(f => ({ ...f, hire_date: e.target.value }))} className="mt-1" /></div>
+              <div className="flex items-center gap-3 mt-6">
+                <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} id="emp-active" className="w-4 h-4" />
+                <label htmlFor="emp-active" className="text-sm font-medium">موظف نشط</label>
+              </div>
             </div>
-            <div><label className="text-sm font-medium">الراتب الأساسي</label><Input type="number" value={form.basic_salary} onChange={e => setForm(f => ({ ...f, basic_salary: e.target.value }))} placeholder="0" className="mt-1" /></div>
-            <div><label className="text-sm font-medium">تاريخ التعيين</label><Input type="date" value={form.hire_date} onChange={e => setForm(f => ({ ...f, hire_date: e.target.value }))} className="mt-1" /></div>
-            <div className="flex items-center gap-3 mt-6">
-              <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} id="emp-active" className="w-4 h-4" />
-              <label htmlFor="emp-active" className="text-sm font-medium">موظف نشط</label>
+
+            {/* ── إعدادات الرصيد والائتمان والتحكم في قطع الطلبات (صلاحيات مدير النظام) ── */}
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-amber-950 flex items-center gap-1.5">
+                  <span>🛡️</span> سياسات الرصيد وسقف قطع الطلبات (تحكم مدير النظام)
+                </span>
+                <span className="text-[11px] bg-amber-200/60 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                  صلاحية إدارية
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">سقف الائتمان / الحد المسموح للقطع (ريال)</label>
+                  <Input 
+                    type="number" 
+                    value={form.credit_limit} 
+                    onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} 
+                    placeholder="20000" 
+                    className="mt-1 font-mono font-bold bg-white" 
+                  />
+                  <span className="text-[10px] text-muted-foreground">الحد المالي الأقصى المسموح للموظف (مثال: 20,000)</span>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">الرصيد المالي المسبق / الافتتاحي (ريال)</label>
+                  <Input 
+                    type="number" 
+                    value={form.balance} 
+                    onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} 
+                    placeholder="0" 
+                    className="mt-1 font-mono font-bold bg-white" 
+                  />
+                  <span className="text-[10px] text-muted-foreground">رصيد مسبق الدفع مخصص لهذا الموظف</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-amber-200/60 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer bg-white/80 p-2.5 rounded-lg border border-amber-200/60 hover:bg-white transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={form.allow_exceed_balance} 
+                    onChange={e => setForm(f => ({ ...f, allow_exceed_balance: e.target.checked }))} 
+                    className="w-4 h-4 text-emerald-600 mt-0.5 rounded" 
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">
+                      السماح بالقطع للموظف حتى ولو رصيده لا يسمح (استثناء إداري دائم)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      عند التفعيل، يمكن للكاشير قطع الطلب للموظف حتى لو تجاوز سقف الائتمان والـ 20,000 ريال
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer bg-white/80 p-2.5 rounded-lg border border-amber-200/60 hover:bg-white transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={form.block_insufficient_balance} 
+                    onChange={e => setForm(f => ({ ...f, block_insufficient_balance: e.target.checked }))} 
+                    className="w-4 h-4 text-red-600 mt-0.5 rounded" 
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">
+                      منع القطع تلقائياً عند تجاوز الحد المسموح وعدم كفاية الرصيد
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      إظهار نافذة منبثقة بتصميم عصري تنبه الكاشير وتمنع العملية مع طلب موافقة مدير النظام
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDlg(false)}>إلغاء</Button>
-            <Button onClick={() => saveMut.mutate(form)} disabled={!form.name || saveMut.isPending}>حفظ</Button>
+            <Button onClick={() => saveMut.mutate(form)} disabled={!form.name || saveMut.isPending}>حفظ التغييرات</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

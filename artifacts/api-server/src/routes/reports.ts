@@ -119,19 +119,23 @@ router.get("/reports/by-cashier", (req, res) => {
 
   let dateFilterOrders = "";
   let dateFilterReturns = "";
-  const params: any[] = [];
+  const orderParams: any[] = [];
+  const retParams: any[] = [];
 
   const salesMod = getSqlBusinessDateModifier("sales");
   if (startDate) {
     dateFilterOrders += ` AND date(datetime(o.created_at, '${salesMod}'))>=? `;
+    orderParams.push(startDate);
     dateFilterReturns += ` AND date(datetime(r.created_at, '${salesMod}'))>=? `;
-    params.push(startDate);
+    retParams.push(startDate);
   }
   if (endDate) {
     dateFilterOrders += ` AND date(datetime(o.created_at, '${salesMod}'))<=? `;
+    orderParams.push(endDate);
     dateFilterReturns += ` AND date(datetime(r.created_at, '${salesMod}'))<=? `;
-    params.push(endDate);
+    retParams.push(endDate);
   }
+  const params: any[] = [...orderParams, ...retParams];
 
   let devFilter = "";
   if (!user || user.role !== "developer") {

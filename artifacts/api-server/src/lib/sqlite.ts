@@ -582,6 +582,10 @@ function initSchema() {
       position TEXT,
       department_id INTEGER REFERENCES hr_departments(id),
       basic_salary REAL NOT NULL DEFAULT 0,
+      balance REAL DEFAULT 0,
+      credit_limit REAL DEFAULT 20000,
+      allow_exceed_balance INTEGER DEFAULT 0,
+      block_insufficient_balance INTEGER DEFAULT 1,
       hire_date TEXT,
       active INTEGER NOT NULL DEFAULT 1
     );

@@ -27,23 +27,10 @@ app.on("before-quit", () => {
   }
 });
 process.on("uncaughtException", (err) => {
-  try {
-    console.error("Uncaught Exception:", err);
-    dialog.showErrorBox("Omni System Pro ERP - Uncaught Exception", err.stack || err.message || String(err));
-  } catch (e) {
-    console.error("Failed to show error dialog:", e);
-  }
-  app.quit();
+  console.error("Non-fatal Uncaught Exception in Electron Main:", err);
 });
 process.on("unhandledRejection", (reason) => {
-  try {
-    console.error("Unhandled Rejection:", reason);
-    const msg = reason instanceof Error ? reason.stack || reason.message : String(reason);
-    dialog.showErrorBox("Omni System Pro ERP - Unhandled Rejection", msg);
-  } catch (e) {
-    console.error("Failed to show rejection dialog:", e);
-  }
-  app.quit();
+  console.warn("Unhandled Rejection in Electron Main (Recovered):", reason);
 });
 var mainWindow = null;
 var mainPort = 3e3;
