@@ -1,0 +1,6 @@
+{
+  "name": "Omni System Pro ERP",
+  "description": "Omni System Pro ERP — نظام إدارة المؤسسات والمخازن والمبيعات الشامل والمحاسبة والتقارير المالية المعتمدة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

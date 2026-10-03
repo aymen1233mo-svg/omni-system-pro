@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./artifacts/pos-system/src/*",
+        "./src/*"
+      ],
+      "@workspace/api-client-react": [
+        "./artifacts/pos-system/src/lib/api-client-react.tsx",
+        "./src/lib/api-client-react.tsx"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*",
+    "artifacts/pos-system/src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "artifacts/api-server",
+    "dist",
+    "dist-desktop",
+    "*.cjs",
+    "electron-main.ts",
+    "preload.ts"
+  ]
+}

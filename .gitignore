@@ -1,0 +1,15 @@
+node_modules/
+build/
+dist/
+dist-desktop/
+coverage/
+.DS_Store
+*.log
+*.exe
+*.zip
+*.db-shm
+*.db-wal
+*.db-journal
+.cache/
+.env*
+!.env.example
