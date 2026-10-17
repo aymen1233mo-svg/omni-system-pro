@@ -228,13 +228,13 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<any> {
     let parsedData: any = null;
     try {
       parsedData = JSON.parse(errorText);
-      errorMsg = parsedData.error || parsedData.message || errorText;
+      errorMsg = parsedData.message || parsedData.reason || (typeof parsedData.error === "string" && !parsedData.error.startsWith("license_") ? parsedData.error : "") || parsedData.error || errorText;
     } catch {}
     const err: any = new Error(errorMsg || response.statusText || `HTTP ${response.status}`);
     err.status = response.status;
     err.statusCode = response.status;
     err.data = parsedData;
-    err.code = parsedData?.code;
+    err.code = parsedData?.code || parsedData?.error;
     throw err;
   }
 

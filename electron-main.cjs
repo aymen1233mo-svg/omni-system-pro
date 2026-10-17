@@ -49,28 +49,36 @@ if (!gotTheLock) {
 function setupDatabase() {
   try {
     const userDataPath = app.getPath("userData");
-    const dbDir = path.join(userDataPath, "data");
-    const dbPath = path.join(dbDir, "pos.db");
+    const dbDir = path.join(userDataPath, "omnisystem_v2_data");
+    const dbPath = path.join(dbDir, "omnisystem_pro_v2.db");
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
+    let isFreshInstall = false;
     if (!fs.existsSync(dbPath) || fs.existsSync(dbPath) && fs.statSync(dbPath).size === 0) {
+      isFreshInstall = true;
       const appRoot = typeof app.getAppPath === "function" ? app.getAppPath() : __dirname;
       const unpackedAppRoot = appRoot.includes(".asar") ? appRoot.replace(/\.asar([\\/]?)/, ".asar.unpacked$1") : appRoot;
       const resPath = process.resourcesPath || "";
       const execDir = path.dirname(process.execPath || "");
       const seedCandidates = [
+        path.join(unpackedAppRoot, "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(appRoot, "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(unpackedAppRoot, "data", "omnisystem_pro_v2.db"),
+        path.join(appRoot, "data", "omnisystem_pro_v2.db"),
+        path.join(resPath, "app.asar.unpacked", "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(resPath, "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(execDir, "resources", "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(__dirname, "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(__dirname, "data", "omnisystem_pro_v2.db"),
+        path.join(process.cwd(), "artifacts", "api-server", "data", "omnisystem_pro_v2.db"),
+        path.join(process.cwd(), "data", "omnisystem_pro_v2.db"),
         path.join(unpackedAppRoot, "artifacts", "api-server", "data", "pos.db"),
         path.join(appRoot, "artifacts", "api-server", "data", "pos.db"),
         path.join(unpackedAppRoot, "data", "pos.db"),
         path.join(appRoot, "data", "pos.db"),
         path.join(resPath, "app.asar.unpacked", "artifacts", "api-server", "data", "pos.db"),
-        path.join(resPath, "app", "artifacts", "api-server", "data", "pos.db"),
         path.join(resPath, "artifacts", "api-server", "data", "pos.db"),
-        path.join(execDir, "resources", "app.asar.unpacked", "artifacts", "api-server", "data", "pos.db"),
-        path.join(execDir, "resources", "app", "artifacts", "api-server", "data", "pos.db"),
-        path.join(__dirname, "artifacts", "api-server", "data", "pos.db"),
-        path.join(__dirname, "data", "pos.db"),
         path.join(process.cwd(), "artifacts", "api-server", "data", "pos.db"),
         path.join(process.cwd(), "data", "pos.db")
       ];
@@ -85,7 +93,26 @@ function setupDatabase() {
         fs.copyFileSync(seedDbPath, dbPath);
         console.log("Database successfully seeded from:", seedDbPath);
       } else {
-        console.warn("Seed database pos.db not found in candidate paths. Creating fresh database.");
+        console.warn("Seed database not found in candidate paths. Initializing fresh database.");
+      }
+    }
+    if (isFreshInstall) {
+      const legacyCandidates = [
+        path.join(userDataPath, "data", "pos.db"),
+        path.join(userDataPath, "pos.db"),
+        path.join(process.cwd(), "data", "pos.db"),
+        path.join(process.cwd(), "pos.db")
+      ];
+      const legacyDb = legacyCandidates.find((p) => {
+        try {
+          return fs.existsSync(p) && fs.statSync(p).size > 1e4 && p !== dbPath;
+        } catch {
+          return false;
+        }
+      });
+      if (legacyDb) {
+        console.log("[Auto-Migration] Legacy database detected at:", legacyDb);
+        process.env.LEGACY_MIGRATE_DB_PATH = legacyDb;
       }
     }
     process.env.DB_PATH = dbPath;
@@ -349,6 +376,16 @@ function createWindow() {
     }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes("127.0.0.1") || url.includes("localhost") || url.startsWith("/") || url.includes("/pos")) {
+      mainWindow.webContents.executeJavaScript(`
+        localStorage.getItem("pos_token") || sessionStorage.getItem("pos_token") || ""
+      `).then((tok) => {
+        createPosWindow(tok);
+      }).catch(() => {
+        createPosWindow("");
+      });
+      return { action: "deny" };
+    }
     shell.openExternal(url);
     return { action: "deny" };
   });
@@ -369,6 +406,108 @@ function createWindow() {
     mainWindow = null;
   });
 }
+var childWindows = /* @__PURE__ */ new Set();
+function createPosWindow(token) {
+  const appRoot = typeof app.getAppPath === "function" ? app.getAppPath() : __dirname;
+  const preloadCandidates = [
+    path.join(__dirname, "preload.cjs"),
+    path.join(appRoot, "preload.cjs"),
+    path.join(process.resourcesPath || "", "app", "preload.cjs"),
+    path.join(process.resourcesPath || "", "preload.cjs"),
+    path.join(process.cwd(), "preload.cjs")
+  ];
+  const preloadPath = preloadCandidates.find((p) => fs.existsSync(p)) || path.join(__dirname, "preload.cjs");
+  const posWin = new BrowserWindow({
+    width: 1366,
+    height: 768,
+    minWidth: 1024,
+    minHeight: 700,
+    title: "Omni System Pro ERP \u2014 \u0646\u0642\u0637\u0629 \u0627\u0644\u0628\u064A\u0639 (\u0634\u0627\u0634\u0629 \u0643\u0627\u0634\u064A\u0631 \u0645\u0633\u062A\u0642\u0644\u0629)",
+    webPreferences: {
+      preload: preloadPath,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
+    },
+    show: false,
+    autoHideMenuBar: true
+  });
+  childWindows.add(posWin);
+  const cleanToken = token ? String(token).trim() : "";
+  const targetUrl = cleanToken ? `http://127.0.0.1:${mainPort}/pos?auth_token=${encodeURIComponent(cleanToken)}` : `http://127.0.0.1:${mainPort}/pos`;
+  posWin.webContents.on("did-finish-load", () => {
+    if (cleanToken) {
+      posWin.webContents.executeJavaScript(`
+        try {
+          localStorage.setItem("pos_token", ${JSON.stringify(cleanToken)});
+          sessionStorage.setItem("pos_token", ${JSON.stringify(cleanToken)});
+        } catch(e) {}
+      `).catch(() => {
+      });
+    }
+  });
+  posWin.once("ready-to-show", () => {
+    posWin.maximize();
+    posWin.show();
+  });
+  posWin.webContents.on("before-input-event", (event, input) => {
+    if (input.key === "F12" || input.control && input.shift && input.key.toLowerCase() === "i") {
+      posWin.webContents.toggleDevTools();
+      event.preventDefault();
+    } else if (input.key === "F5" || input.control && input.key.toLowerCase() === "r") {
+      posWin.webContents.reload();
+      event.preventDefault();
+    }
+  });
+  posWin.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes("127.0.0.1") || url.includes("localhost") || url.startsWith("/") || url.includes("/pos")) {
+      createPosWindow(cleanToken);
+      return { action: "deny" };
+    }
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+  posWin.on("closed", () => {
+    childWindows.delete(posWin);
+  });
+  posWin.loadURL(targetUrl);
+  return posWin;
+}
+ipcMain.handle("open-pos-window", async (event, { token } = {}) => {
+  try {
+    const activeToken = token || (mainWindow ? await mainWindow.webContents.executeJavaScript(`localStorage.getItem("pos_token") || sessionStorage.getItem("pos_token") || ""`).catch(() => "") : "");
+    createPosWindow(activeToken);
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to open POS window:", err);
+    return { success: false, error: err.message };
+  }
+});
+ipcMain.handle("open-window", async (event, { url, title, token } = {}) => {
+  try {
+    if (!url || url.includes("pos")) {
+      return await ipcMain.emit("open-pos-window", event, { token });
+    }
+    const fullUrl = url.startsWith("http") ? url : `http://127.0.0.1:${mainPort}${url.startsWith("/") ? "" : "/"}${url}`;
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      title: title || "Omni System Pro ERP",
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, "preload.cjs")
+      }
+    });
+    childWindows.add(win);
+    win.loadURL(fullUrl);
+    win.on("closed", () => childWindows.delete(win));
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 ipcMain.handle("save-pdf", async (event, { html, title, defaultFileName, pageSize = "A4", landscape = false }) => {
   try {
     const parentWin = BrowserWindow.fromWebContents(event.sender) || mainWindow;

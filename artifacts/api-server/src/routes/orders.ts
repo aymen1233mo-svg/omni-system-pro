@@ -9,14 +9,15 @@ const router = Router();
 
 try {
   db.exec("ALTER TABLE orders ADD COLUMN business_date TEXT");
+  db.exec("ALTER TABLE orders ADD COLUMN daily_order_number INTEGER");
 } catch {}
 
 /**
- * Calculates the next sequential POS invoice number (starting at 1) for the current active business day.
- * Automatically resets to 1 when a new business day begins according to General Settings (cutoff time after midnight).
+ * Calculates the next sequential daily order number (starting at 1) for the current active business day.
+ * Automatically and strictly resets to 1 when a new business day begins according to General Settings.
  */
-export function getNextPosInvoiceNumber(nowInput?: Date): {
-  nextInvoiceNumber: string;
+export function getNextDailyOrderNumber(nowInput?: Date): {
+  nextDailyNumber: number;
   activeBusinessDate: string;
   todayCount: number;
   cutoffTime: string;
@@ -24,68 +25,97 @@ export function getNextPosInvoiceNumber(nowInput?: Date): {
 } {
   const config = getBusinessDayConfig();
   const activeBusinessDate = getBusinessDate("sales", nowInput);
-  const recentOrders = db.prepare(`
-    SELECT id, invoice_number, order_type, created_at, business_date, status
+  const salesModifier = getSqlBusinessDateModifier("sales");
+
+  // Query highest daily_order_number for the active business day
+  const row = db.prepare(`
+    SELECT MAX(daily_order_number) as max_daily, COUNT(*) as c
     FROM orders
-    WHERE (order_type IS NULL OR order_type != 'inventory_invoice')
-    ORDER BY id DESC
-    LIMIT 2000
-  `).all() as {
-    id: number;
-    invoice_number: string;
-    order_type: string | null;
-    created_at: string | null;
-    business_date?: string | null;
-    status?: string | null;
-  }[];
+    WHERE (
+      business_date = ? 
+      OR date(datetime(created_at, '${salesModifier}')) = ?
+      OR date(created_at) = ?
+    )
+    AND (order_type IS NULL OR order_type != 'inventory_invoice')
+  `).get(activeBusinessDate, activeBusinessDate, activeBusinessDate) as {
+    max_daily?: number | null;
+    c?: number | null;
+  } | undefined;
 
-  let maxTodayNum = 0;
-  let todayCount = 0;
+  let nextDaily = 1;
+  const countToday = Number(row?.c || 0);
 
-  for (const o of recentOrders) {
-    const orderBizDate = o.created_at
-      ? getOrderBusinessDate(o.created_at, "sales")
-      : (o.business_date || "");
-
-    if (orderBizDate === activeBusinessDate) {
-      todayCount++;
-      const cleanInv = String(o.invoice_number || "").trim();
-      if (/^\d+$/.test(cleanInv)) {
-        const val = parseInt(cleanInv, 10);
-        if (!isNaN(val) && val > maxTodayNum) {
-          maxTodayNum = val;
-        }
-      } else if (!cleanInv.toUpperCase().startsWith("SINV")) {
-        const matches = cleanInv.match(/\d+/g);
-        if (matches && matches.length > 0) {
-          const val = parseInt(matches[matches.length - 1], 10);
-          if (!isNaN(val) && val < 100000 && val > maxTodayNum) {
-            maxTodayNum = val;
-          }
-        }
-      }
-    }
+  if (row && typeof row.max_daily === "number" && row.max_daily > 0) {
+    nextDaily = row.max_daily + 1;
+  } else if (countToday > 0) {
+    nextDaily = countToday + 1;
+  } else {
+    // Brand new day with no orders: always starts at 1!
+    nextDaily = 1;
   }
 
-  const nextNum = maxTodayNum + 1;
   return {
-    nextInvoiceNumber: String(nextNum),
+    nextDailyNumber: nextDaily,
     activeBusinessDate,
-    todayCount,
+    todayCount: countToday,
     cutoffTime: config.cutoffTime,
     cutoffEnabled: config.enabled && config.applyCutoffToSales,
   };
 }
 
+/**
+ * Calculates the next unique global main invoice number (used for permanent searching and accounting).
+ * This does NOT reset daily, ensuring every invoice can be retrieved by its unique ID.
+ */
+export function getNextMainInvoiceNumber(): string {
+  const maxRow = db.prepare(`
+    SELECT MAX(id) as max_id FROM orders
+  `).get() as { max_id?: number | null };
+  const nextId = (maxRow?.max_id || 0) + 1;
+  return `INV-${String(nextId).padStart(5, '0')}`;
+}
+
+/**
+ * Backward-compatible helper for next invoice counter
+ */
+export function getNextPosInvoiceNumber(nowInput?: Date): {
+  nextInvoiceNumber: string;
+  nextDailyNumber: number;
+  nextMainInvoiceNumber: string;
+  activeBusinessDate: string;
+  todayCount: number;
+  cutoffTime: string;
+  cutoffEnabled: boolean;
+} {
+  const daily = getNextDailyOrderNumber(nowInput);
+  const main = getNextMainInvoiceNumber();
+  return {
+    nextInvoiceNumber: String(daily.nextDailyNumber),
+    nextDailyNumber: daily.nextDailyNumber,
+    nextMainInvoiceNumber: main,
+    activeBusinessDate: daily.activeBusinessDate,
+    todayCount: daily.todayCount,
+    cutoffTime: daily.cutoffTime,
+    cutoffEnabled: daily.cutoffEnabled,
+  };
+}
+
 function formatOrder(o: any, items: any[]) {
+  let dailyNum = o.daily_order_number;
+  if (!dailyNum || isNaN(Number(dailyNum))) {
+    const parsed = parseInt(String(o.invoice_number || "").replace(/\D/g, ""), 10);
+    dailyNum = !isNaN(parsed) && parsed > 0 && parsed < 10000 ? parsed : (o.id || 1);
+  }
   return {
     id: o.id,
     invoiceNumber: o.invoice_number,
+    dailyOrderNumber: Number(dailyNum),
     subtotal: o.subtotal,
     discount: o.discount,
     tax: o.tax,
     total: o.total,
     paymentMethod: o.payment_method,
+    status: o.status ?? "completed",
     cashAmount: o.cash_amount,
     cardAmount: o.card_amount,
     customerId: o.customer_id ?? null,
@@ -178,11 +208,13 @@ router.post("/orders", (req, res) => {
       }
     }
 
-    // Daily sequential invoice number generation: resets to 1 each new business day
-    // Respects the system's business day rollover cutoff time after 12:00 midnight
-    const posCounterInfo = getNextPosInvoiceNumber();
-    const invoiceNumber = posCounterInfo.nextInvoiceNumber;
-    const activeBusinessDate = posCounterInfo.activeBusinessDate;
+    // Daily sequential order number generation: strictly resets to 1 each new business day
+    const dailyInfo = getNextDailyOrderNumber();
+    const dailyOrderNumber = dailyInfo.nextDailyNumber;
+    const activeBusinessDate = dailyInfo.activeBusinessDate;
+    // Main permanent searchable invoice number
+    const nextMain = getNextMainInvoiceNumber();
+    const invoiceNumber = req.body.invoiceNumber ? String(req.body.invoiceNumber) : nextMain;
     const createdAt = new Date().toISOString();
 
     let effectiveCustomerId = customerId ? Number(customerId) : null;
@@ -255,14 +287,15 @@ router.post("/orders", (req, res) => {
     try {
       const r = db.prepare(`
         INSERT INTO orders (
-          invoice_number, subtotal, discount, tax, total, 
+          invoice_number, daily_order_number, subtotal, discount, tax, total, 
           payment_method, cash_amount, card_amount, 
           customer_id, supplier_id, employee_id, user_id, note, order_type, 
           table_number, safe_id, created_at, business_date, status
         )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'completed')
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'completed')
       `).run(
         invoiceNumber,
+        dailyOrderNumber,
         subtotal ?? 0,
         discount ?? 0,
         tax ?? 0,
@@ -286,14 +319,15 @@ router.post("/orders", (req, res) => {
       console.warn("Order insert with safe_id/supplier_id failed, retrying fallback:", insertErr.message);
       const r2 = db.prepare(`
         INSERT INTO orders (
-          invoice_number, subtotal, discount, tax, total, 
+          invoice_number, daily_order_number, subtotal, discount, tax, total, 
           payment_method, cash_amount, card_amount, 
           customer_id, supplier_id, employee_id, user_id, note, order_type, 
-          table_number, created_at, status
+          table_number, created_at, business_date, status
         )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'completed')
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'completed')
       `).run(
         invoiceNumber,
+        dailyOrderNumber,
         subtotal ?? 0,
         discount ?? 0,
         tax ?? 0,
@@ -655,28 +689,26 @@ router.get("/orders/lookup", (req, res) => {
       LEFT JOIN users u ON u.id=o.user_id
       LEFT JOIN customers c ON c.id=o.customer_id
       WHERE o.invoice_number = ?
-         OR o.invoice_number = ?
          OR TRIM(o.invoice_number) = ?
          OR CAST(o.id AS TEXT) = ?
-         OR CAST(o.id AS TEXT) = ?
+         OR CAST(o.daily_order_number AS TEXT) = ?
          OR o.invoice_number LIKE ?
          OR o.invoice_number LIKE ?
-         OR (LENGTH(?) > 0 AND (o.invoice_number LIKE ? OR CAST(o.id AS TEXT) = ?))
+         OR (LENGTH(?) > 0 AND (o.invoice_number LIKE ? OR CAST(o.id AS TEXT) = ? OR CAST(o.daily_order_number AS TEXT) = ?))
       ORDER BY 
         CASE 
           WHEN o.invoice_number = ? THEN 0 
           WHEN CAST(o.id AS TEXT) = ? THEN 1
           WHEN TRIM(o.invoice_number) = ? THEN 2
-          WHEN o.invoice_number = ? THEN 3
-          WHEN o.invoice_number LIKE ? THEN 4
-          ELSE 5 
+          WHEN o.invoice_number LIKE ? THEN 3
+          ELSE 4 
         END,
         o.created_at DESC
       LIMIT 20
     `).all(
-      qStr, cleanQ, cleanQ, qStr, cleanQ, `%${cleanQ}`, `%${qStr}%`,
-      numbersOnly, `%${numbersOnly}%`, numbersOnly,
-      qStr, qStr, cleanQ, cleanQ, `%${cleanQ}`
+      qStr, cleanQ, cleanQ, cleanQ, `%${cleanQ}`, `%${qStr}%`,
+      numbersOnly, `%${numbersOnly}%`, numbersOnly, numbersOnly,
+      qStr, cleanQ, cleanQ, `%${cleanQ}`
     ) as any[];
 
     if (!orderRows || orderRows.length === 0) {

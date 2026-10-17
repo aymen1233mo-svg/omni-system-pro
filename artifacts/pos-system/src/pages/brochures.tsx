@@ -10,13 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 
-// Import generated brochure assets & brand logos
-import heroBrochure from "../assets/images/omnifly_hero_modern_1788663939856.jpg";
-import featuresBrochure from "../assets/images/omnifly_catalog_modules_1788663953219.jpg";
-import hajjBrochure from "../assets/images/omnifly_hajj_umrah_1788663965150.jpg";
-import accountingBrochure from "../assets/images/omnifly_accounting_erp_1788663977752.jpg";
-import itqanLogo from "../assets/images/itqan_logo_1783139970923.jpg";
-import omniLogo from "../assets/images/omnisystem_pro_logo_1784250216808.jpg";
+const heroBrochure = "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=1200&q=80";
+const featuresBrochure = "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80";
+const hajjBrochure = "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1200&q=80";
+const accountingBrochure = "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80";
+const itqanLogo = "https://images.unsplash.com/photo-1560179707-f14e90ef3623?auto=format&fit=crop&w=400&q=80";
+const omniLogo = "https://images.unsplash.com/photo-1579389083078-4e7018379f7e?auto=format&fit=crop&w=400&q=80";
 
 interface BrochureItem {
   id: string;

@@ -12,7 +12,7 @@ import { Printer, FileText, Briefcase, ClipboardList, AlertCircle, FileSpreadshe
 import { printA4Html, generateStatementA4Html } from "@/lib/printUtils";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { apiGet, fmt } from "./api";
-import defaultLogo from "@/assets/images/omnisystem_pro_logo_1784250216808.png";
+const defaultLogo = "/icon.png";
 
 export function ReportsTab({ initialTab }: { initialTab?: string }) {
   const { toast } = useToast();

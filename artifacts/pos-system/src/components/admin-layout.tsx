@@ -1060,13 +1060,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
         {/* Top Header Bar with Global Search & Branch Switcher */}
-        <header className="h-14 bg-white border-b border-slate-200 px-3 sm:px-4 flex items-center justify-between shadow-xs shrink-0 print:hidden z-10">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <header className="h-14 bg-white border-b border-slate-200 px-2 sm:px-4 flex items-center justify-between shadow-xs shrink-0 print:hidden z-10">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Mobile Hamburger Menu Toggle Button */}
             <button
               type="button"
               onClick={() => setMobileOpen(true)}
-              className="lg:hidden p-2 text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors font-bold flex items-center gap-1.5 shadow-2xs"
+              className="lg:hidden p-2 text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors font-bold flex items-center gap-1 shadow-2xs"
               title="فتح القائمة الرئيسية"
             >
               <Menu className="w-5 h-5 text-slate-800" />
@@ -1077,7 +1077,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setGlobalSearchOpen(true)}
-              className="flex items-center gap-2 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200 text-slate-600 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs transition-colors shadow-xs group max-w-[150px] xs:max-w-[200px] sm:w-72"
+              className="flex items-center gap-1.5 sm:gap-2 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200 text-slate-600 px-2 sm:px-3 py-1.5 rounded-xl text-xs transition-colors shadow-xs group max-w-[125px] xs:max-w-[180px] sm:w-72"
             >
               <Search className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
               <span className="truncate flex-1 text-right text-slate-500 text-[11px] sm:text-xs">بحث شامل...</span>
@@ -1087,9 +1087,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1 sm:gap-2.5">
             {/* Branch Switcher Pill */}
-            <div className="flex items-center gap-1 sm:gap-1.5 bg-blue-50 border border-blue-200 text-blue-900 px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-semibold max-w-[120px] sm:max-w-none truncate">
+            <div className="flex items-center gap-1 sm:gap-1.5 bg-blue-50 border border-blue-200 text-blue-900 px-1.5 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-semibold max-w-[95px] xs:max-w-[130px] sm:max-w-none truncate">
               <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
               <span className="truncate">{settings?.businessName || "الرئيسي"}</span>
             </div>
@@ -1113,7 +1113,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {/* Quick Developer Licenses Link */}
             {isDeveloper && (
               <Link href="/licenses">
-                <div className="flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs">
+                <div className="hidden xs:flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs">
                   <KeyRound className="w-3.5 h-3.5 text-purple-600" />
                   <span>🔑 إدارة التراخيص</span>
                 </div>
@@ -1126,11 +1126,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {/* Notification Bell */}
             <Link href="/dashboard">
               <div
-                className="relative p-2 text-slate-600 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                className="relative p-1.5 sm:p-2 text-slate-600 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 title="التنبيهات والإشعارات"
               >
                 <Bell className="w-4 h-4" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
               </div>
             </Link>
 
@@ -1147,13 +1147,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-20 lg:pb-6">
+        <div className="flex-1 overflow-y-auto p-2.5 sm:p-5 md:p-6 pb-24 lg:pb-6 overscroll-contain">
           {children}
         </div>
       </main>
 
       {/* Mobile Bottom Dock Bar */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 text-slate-200 h-16 flex items-center justify-around px-2 shadow-2xl dir-rtl">
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 text-slate-200 h-16 flex items-center justify-around px-2 shadow-2xl dir-rtl pb-[env(safe-area-inset-bottom)]">
         <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
           <div className={cn("flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold px-2 py-1 rounded-xl transition-colors", location === "/dashboard" ? "text-amber-400 font-black" : "text-slate-400 hover:text-slate-200")}>
             <LayoutDashboard className="w-5 h-5" />
@@ -1186,8 +1186,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* Change Password Modal */}
       {changePasswordOpen && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 dir-rtl">
-          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 dir-rtl overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-red-600/20 text-red-500 flex items-center justify-center border border-red-500/30">

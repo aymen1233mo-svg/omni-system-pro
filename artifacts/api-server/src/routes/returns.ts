@@ -6,6 +6,89 @@ import { recordSafeOrBankMovement } from "../lib/erp-accounting-sync";
 
 const router = Router();
 
+/**
+ * Recalculates and updates the original order status accurately.
+ * Differentiates between 'returned' (full refund of all items/amount)
+ * and 'partially_returned' (partial refund of some items/quantities).
+ */
+export function updateOrderStatusAfterReturn(database: any, orderId?: number | null, invoiceNumber?: string | null) {
+  if (!orderId && !invoiceNumber) return;
+  try {
+    let order: any = null;
+    if (orderId) {
+      order = database.prepare("SELECT id, invoice_number, total, status FROM orders WHERE id=?").get(orderId);
+    }
+    if (!order && invoiceNumber) {
+      order = database.prepare("SELECT id, invoice_number, total, status FROM orders WHERE invoice_number=?").get(invoiceNumber);
+    }
+    if (!order) return;
+
+    const actualOrderId = order.id;
+    const actualInvoiceNumber = order.invoice_number;
+
+    // Get total refund amount of all approved returns for this order
+    const returnsSummary = database.prepare(`
+      SELECT 
+        COALESCE(SUM(total_refund), 0) as total_returned,
+        COUNT(id) as approved_returns_count
+      FROM returns 
+      WHERE (order_id = ? OR (invoice_number IS NOT NULL AND invoice_number = ?))
+        AND status = 'approved'
+    `).get(actualOrderId, actualInvoiceNumber) as { total_returned: number; approved_returns_count: number };
+
+    // Get original order items total quantities
+    const orderItems = database.prepare(`
+      SELECT id, product_id, quantity FROM order_items WHERE order_id = ?
+    `).all(actualOrderId) as { id: number; product_id: number; quantity: number }[];
+
+    // Get total returned quantities grouped by product_id
+    const returnedItems = database.prepare(`
+      SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) as returned_qty
+      FROM return_items ri
+      JOIN returns r ON r.id = ri.return_id
+      WHERE (r.order_id = ? OR (r.invoice_number IS NOT NULL AND r.invoice_number = ?))
+        AND r.status = 'approved'
+      GROUP BY ri.product_id
+    `).all(actualOrderId, actualInvoiceNumber) as { product_id: number; returned_qty: number }[];
+
+    const returnedQtyMap = new Map<number, number>();
+    for (const ri of returnedItems) {
+      if (ri.product_id) {
+        returnedQtyMap.set(ri.product_id, Number(ri.returned_qty || 0));
+      }
+    }
+
+    const orderTotal = Number(order.total || 0);
+    const totalReturned = Number(returnsSummary?.total_returned || 0);
+    const approvedCount = Number(returnsSummary?.approved_returns_count || 0);
+
+    let newStatus = "completed";
+
+    if (approvedCount > 0 && totalReturned > 0) {
+      // Check if all items in the order were fully returned
+      let allItemsFullyReturned = false;
+      if (orderItems.length > 0) {
+        allItemsFullyReturned = orderItems.every(oi => {
+          const retQty = returnedQtyMap.get(oi.product_id) || 0;
+          return retQty >= oi.quantity;
+        });
+      }
+
+      // If either the returned amount covers the entire invoice total (with slight epsilon for rounding)
+      // or all item quantities have been fully returned:
+      if ((orderTotal > 0 && totalReturned >= (orderTotal - 0.05)) || allItemsFullyReturned) {
+        newStatus = "returned";
+      } else {
+        newStatus = "partially_returned";
+      }
+    }
+
+    database.prepare("UPDATE orders SET status = ? WHERE id = ?").run(newStatus, actualOrderId);
+  } catch (err: any) {
+    console.error("Error updating order status after return:", err.message);
+  }
+}
+
 function requireAuth(req: any, res: any): any {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return null; }
@@ -349,20 +432,8 @@ router.post("/returns", (req, res) => {
           db.prepare("UPDATE customers SET balance = MAX(0, COALESCE(balance, 0) - ?) WHERE id=?").run(total_refund, effectiveCustomerId);
         }
 
-        // Mark original order status as 'returned'
-        if (resolvedOrderId) {
-          try {
-            db.prepare("UPDATE orders SET status = 'returned' WHERE id=?").run(resolvedOrderId);
-          } catch (oErr: any) {
-            console.error("Error updating order status on return:", oErr.message);
-          }
-        } else if (effectiveInvoiceNumber) {
-          try {
-            db.prepare("UPDATE orders SET status = 'returned' WHERE invoice_number=?").run(effectiveInvoiceNumber);
-          } catch (oErr: any) {
-            console.error("Error updating order status on return:", oErr.message);
-          }
-        }
+        // Update original order status (differentiating partial vs full return)
+        updateOrderStatusAfterReturn(db, resolvedOrderId, effectiveInvoiceNumber);
 
         // Revert & remove meal deduction if this invoice was an employee/customer meal deduction
         if (resolvedOrderId || effectiveInvoiceNumber) {
@@ -490,6 +561,9 @@ router.post("/returns/:id/approve", (req, res) => {
       console.error("Accounting journal error during return approval:", jeErr.message);
     }
 
+    // 5. Update Order status based on cumulative returns
+    updateOrderStatusAfterReturn(db, returnRow.order_id, returnRow.invoice_number);
+
     logAudit(user.id, user.name, "اعتماد مرتجع", `تم اعتماد المرتجع رقم ${returnRow.return_number} بقيمة ${returnRow.total_refund} وإعادة البضائع للمخازن`);
     res.json({ success: true, status: "approved" });
   } catch (e: any) {
@@ -518,6 +592,8 @@ router.delete("/returns/:id", (req, res) => {
     }
 
     db.prepare("DELETE FROM returns WHERE id=?").run(req.params.id);
+    // Recalculate original order status after return deletion
+    updateOrderStatusAfterReturn(db, row.order_id, row.invoice_number);
     logAudit(user.id, user.name, "حذف مرتجع", `حذف مرتجع رقم ${row.return_number}`);
     res.status(204).send();
   } catch (e: any) {

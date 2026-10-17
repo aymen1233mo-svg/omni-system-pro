@@ -1,6 +1,7 @@
 import { app as electronApp, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import http from "node:http";
 import expressApp from "./artifacts/api-server/src/app";
 
 // Handle print-silent IPC invocation
@@ -214,6 +215,86 @@ process.env.FRONTEND_DIST = frontendDistPath;
 
 let mainWindow: BrowserWindow | null = null;
 let server: any = null;
+const childWindows = new Set<BrowserWindow>();
+
+function createPosWindow(token?: string) {
+  const posWin = new BrowserWindow({
+    width: 1366,
+    height: 768,
+    minWidth: 1024,
+    minHeight: 700,
+    title: "Omni System Pro ERP — نقطة البيع (شاشة كاشير مستقلة)",
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
+  });
+
+  childWindows.add(posWin);
+
+  const cleanToken = token ? String(token).trim() : "";
+  const targetUrl = cleanToken
+    ? `http://127.0.0.1:3000/pos?auth_token=${encodeURIComponent(cleanToken)}`
+    : `http://127.0.0.1:3000/pos`;
+
+  posWin.webContents.on("did-finish-load", () => {
+    if (cleanToken) {
+      posWin.webContents.executeJavaScript(`
+        try {
+          localStorage.setItem("pos_token", ${JSON.stringify(cleanToken)});
+          sessionStorage.setItem("pos_token", ${JSON.stringify(cleanToken)});
+        } catch(e) {}
+      `).catch(() => {});
+    }
+  });
+
+  posWin.on("closed", () => {
+    childWindows.delete(posWin);
+  });
+
+  posWin.loadURL(targetUrl);
+  return posWin;
+}
+
+ipcMain.handle("open-pos-window", async (event, { token } = {}) => {
+  try {
+    const activeToken = token || (mainWindow ? await mainWindow.webContents.executeJavaScript(`localStorage.getItem("pos_token") || sessionStorage.getItem("pos_token") || ""`).catch(() => "") : "");
+    createPosWindow(activeToken);
+    return { success: true };
+  } catch (err: any) {
+    console.error("Failed to open POS window in Electron:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("open-window", async (event, { url, title, token }: any = {}) => {
+  try {
+    if (!url || url.includes("pos")) {
+      createPosWindow(token);
+      return { success: true };
+    }
+    const fullUrl = url.startsWith("http") ? url : `http://127.0.0.1:3000${url.startsWith("/") ? "" : "/"}${url}`;
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      title: title || "Omni System Pro ERP",
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, "preload.cjs"),
+      },
+    });
+    childWindows.add(win);
+    win.loadURL(fullUrl);
+    win.on("closed", () => childWindows.delete(win));
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
 
 function startServer(port: number) {
   return new Promise<void>((resolve, reject) => {
@@ -232,7 +313,7 @@ async function createWindow() {
     width: 1280,
     height: 800,
     title: "Omni System Pro ERP — نظام إدارة المخازن والمبيعات والحسابات المتكامل",
-    autoHideMenuBar: true, // Hide menu bar for a clean desktop feel
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -242,16 +323,45 @@ async function createWindow() {
 
   const appUrl = "http://127.0.0.1:3000/login";
 
-  mainWindow.webContents.on("did-fail-load", () => {
-    console.warn("Page load failed, retrying in 1s...");
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.loadURL(appUrl);
-      }
-    }, 1000);
-  });
+  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <title>جاري إقلاع النظام...</title>
+      <style>
+        body { font-family: Tahoma, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #fff; margin: 0; }
+        .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.2); border-top-color: #f59e0b; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h2 { margin-top: 20px; font-size: 18px; color: #f8fafc; }
+        p { color: #94a3b8; font-size: 13px; margin-top: 5px; }
+      </style>
+    </head>
+    <body>
+      <div class="spinner"></div>
+      <h2>جاري إقلاع وتشغيل نظام OmniSystem Pro ERP...</h2>
+      <p>يرجى الانتظار لحظات ريثما يتم تجهيز الخادم وقاعدة البيانات المحلية</p>
+    </body>
+    </html>
+  `)}`);
 
-  mainWindow.loadURL(appUrl);
+  const checkServerAndLoad = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    
+    http.get("http://127.0.0.1:3000/api/health", (res) => {
+      if (res.statusCode === 200) {
+        mainWindow?.loadURL(appUrl).catch(() => {
+          setTimeout(checkServerAndLoad, 800);
+        });
+      } else {
+        setTimeout(checkServerAndLoad, 800);
+      }
+    }).on("error", () => {
+      setTimeout(checkServerAndLoad, 800);
+    });
+  };
+
+  setTimeout(checkServerAndLoad, 400);
 
   if (isDev) {
     mainWindow.webContents.openDevTools();

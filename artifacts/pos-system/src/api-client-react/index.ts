@@ -28,11 +28,17 @@ export async function apiRequest<T = any>(path: string, options: RequestInit = {
   });
   if (!res.ok) {
     let errMsg = "Request failed";
+    let errJson: any = null;
     try {
-      const errJson = await res.json();
-      errMsg = errJson.error || errMsg;
+      errJson = await res.json();
+      errMsg = errJson.message || errJson.reason || (typeof errJson.error === "string" && !errJson.error.startsWith("license_") ? errJson.error : "") || errJson.error || errMsg;
     } catch {}
-    throw new Error(errMsg);
+    const err: any = new Error(errMsg);
+    err.status = res.status;
+    err.statusCode = res.status;
+    err.data = errJson;
+    err.code = errJson?.code || errJson?.error;
+    throw err;
   }
   if (res.status === 204) return null as T;
   return res.json();
@@ -165,11 +171,13 @@ export interface OrderItemInput {
 export interface Order {
   id: number;
   invoiceNumber: string;
+  dailyOrderNumber?: number | null;
   subtotal: number;
   discount: number;
   tax: number;
   total: number;
   paymentMethod: string;
+  status?: string;
   cashAmount?: number | null;
   cardAmount?: number | null;
   customerId?: number | null;
@@ -197,6 +205,8 @@ export interface SettingsInput {
   showCustomer: boolean;
   receiptPaperSize: string;
   showOrderNumber: boolean;
+  showDailyOrderNumber?: boolean;
+  showMainInvoiceNumber?: boolean;
   showTableNumber: boolean;
   showDateTime: boolean;
   showBarcode: boolean;
@@ -256,7 +266,10 @@ export function useLogin() {
       method: "POST",
       body: JSON.stringify(variables.data),
     }),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
+      if (!data || data.licenseBlocked || data.isLicenseAlert || !data.token) {
+        return;
+      }
       if (typeof window !== "undefined") {
         sessionStorage.setItem("pos_token", data.token);
         localStorage.setItem("pos_token", data.token);

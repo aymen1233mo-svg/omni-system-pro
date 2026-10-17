@@ -147,6 +147,15 @@ function resolveDatabasePath(): string {
   }
 
   const candidatePaths = [
+    path.resolve(workspaceRoot, "artifacts/api-server/data/omnisystem_pro_v2.db"),
+    path.resolve(process.cwd(), "artifacts/api-server/data/omnisystem_pro_v2.db"),
+    path.resolve(process.cwd(), "data/omnisystem_pro_v2.db"),
+    path.resolve(moduleDir, "data/omnisystem_pro_v2.db"),
+    path.resolve(moduleDir, "../data/omnisystem_pro_v2.db"),
+    path.resolve(moduleDir, "../../artifacts/api-server/data/omnisystem_pro_v2.db"),
+    path.resolve(moduleDir, "../../../artifacts/api-server/data/omnisystem_pro_v2.db"),
+    path.resolve(moduleDir, "artifacts/api-server/data/omnisystem_pro_v2.db"),
+    // Backward-compatibility fallbacks
     path.resolve(workspaceRoot, "artifacts/api-server/data/pos.db"),
     path.resolve(process.cwd(), "artifacts/api-server/data/pos.db"),
     path.resolve(process.cwd(), "data/pos.db"),
@@ -183,7 +192,7 @@ function resolveDatabasePath(): string {
     }
   }
 
-  return path.resolve(workspaceRoot, "artifacts/api-server/data/pos.db");
+  return path.resolve(workspaceRoot, "artifacts/api-server/data/omnisystem_pro_v2.db");
 }
 
 let dbPath = resolveDatabasePath();
@@ -191,8 +200,8 @@ let dbPath = resolveDatabasePath();
 try {
   mkdirSync(path.dirname(dbPath), { recursive: true });
 } catch (mkdirErr: any) {
-  console.warn(`[Database Setup] Cannot create directory for ${dbPath}: ${mkdirErr?.message}. Falling back to ./data/pos.db`);
-  dbPath = path.resolve(process.cwd(), "data/pos.db");
+  console.warn(`[Database Setup] Cannot create directory for ${dbPath}: ${mkdirErr?.message}. Falling back to ./data/omnisystem_pro_v2.db`);
+  dbPath = path.resolve(process.cwd(), "data/omnisystem_pro_v2.db");
   try {
     mkdirSync(path.dirname(dbPath), { recursive: true });
   } catch (err) {
@@ -473,6 +482,8 @@ function initSchema() {
       note TEXT,
       order_type TEXT NOT NULL DEFAULT 'dine-in',
       table_number TEXT,
+      daily_order_number INTEGER,
+      business_date TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -894,6 +905,11 @@ function initSchema() {
       devices_limit INTEGER NOT NULL DEFAULT 1,
       expires_at TEXT NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
+      status TEXT DEFAULT 'active',
+      target_version TEXT DEFAULT '2.0.0',
+      license_type TEXT DEFAULT 'desktop',
+      notes TEXT,
+      device_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -1454,6 +1470,24 @@ function runMigrations() {
   try { db.exec("ALTER TABLE orders ADD COLUMN is_employee_meal INTEGER NOT NULL DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE orders ADD COLUMN employee_id INTEGER"); } catch {}
   try { db.exec("ALTER TABLE orders ADD COLUMN safe_id INTEGER REFERENCES safes(id)"); } catch {}
+  try { db.exec("ALTER TABLE orders ADD COLUMN daily_order_number INTEGER"); } catch {}
+  try { db.exec("ALTER TABLE orders ADD COLUMN business_date TEXT"); } catch {}
+  try {
+    const unnumbered = db.prepare("SELECT id, created_at, business_date FROM orders WHERE daily_order_number IS NULL ORDER BY id ASC").all() as any[];
+    if (unnumbered.length > 0) {
+      const counters: Record<string, number> = {};
+      const upd = db.prepare("UPDATE orders SET daily_order_number = ?, business_date = COALESCE(business_date, ?) WHERE id = ?");
+      for (const row of unnumbered) {
+        let bDate = row.business_date;
+        if (!bDate && row.created_at) {
+          bDate = String(row.created_at).trim().substring(0, 10);
+        }
+        if (!bDate) bDate = "2026-10-10";
+        counters[bDate] = (counters[bDate] || 0) + 1;
+        upd.run(counters[bDate], bDate, row.id);
+      }
+    }
+  } catch (bfErr) {}
   try { db.exec("ALTER TABLE cash_shifts ADD COLUMN safe_id INTEGER REFERENCES safes(id)"); } catch {}
   try { db.exec("ALTER TABLE cash_shifts ADD COLUMN branch_id INTEGER DEFAULT 1"); } catch {}
   
@@ -1923,6 +1957,128 @@ function runMigrations() {
   } catch (e) {
     console.error("Error running travel migrations:", e);
   }
+
+  // Universal Safe Column Migration Helper
+  function ensureCol(tableName: string, columnName: string, columnDef: string) {
+    try {
+      const cols = db.prepare(`PRAGMA table_info("${tableName}")`).all() as Array<{ name: string }>;
+      if (!cols || cols.length === 0) return;
+      const exists = cols.some((c) => c.name.toLowerCase() === columnName.toLowerCase());
+      if (!exists) {
+        db.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${columnName} ${columnDef}`);
+        console.log(`[Schema Migration] Auto-added missing column "${columnName}" to table "${tableName}"`);
+      }
+    } catch (err: any) {
+      try {
+        db.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${columnName} ${columnDef}`);
+      } catch {}
+    }
+  }
+
+  // Ensure ALL licenses & license_devices columns exist on existing databases
+  ensureCol("licenses", "license_key", "TEXT");
+  ensureCol("licenses", "client_name", "TEXT DEFAULT 'مؤسسة أومني سيستم للتجارة والمبيعات'");
+  ensureCol("licenses", "devices_limit", "INTEGER DEFAULT 1");
+  ensureCol("licenses", "expires_at", "TEXT DEFAULT '2027-12-31'");
+  ensureCol("licenses", "active", "INTEGER DEFAULT 1");
+  ensureCol("licenses", "status", "TEXT DEFAULT 'active'");
+  ensureCol("licenses", "target_version", "TEXT DEFAULT '2.0.0'");
+  ensureCol("licenses", "license_type", "TEXT DEFAULT 'desktop'");
+  ensureCol("licenses", "notes", "TEXT DEFAULT ''");
+  ensureCol("licenses", "device_id", "TEXT DEFAULT ''");
+  ensureCol("licenses", "created_at", "TEXT DEFAULT (datetime('now', 'localtime'))");
+
+  ensureCol("license_devices", "license_id", "INTEGER");
+  ensureCol("license_devices", "device_id", "TEXT");
+  ensureCol("license_devices", "device_name", "TEXT");
+  ensureCol("license_devices", "authorized_by", "TEXT DEFAULT 'مطور النظام'");
+  ensureCol("license_devices", "status", "TEXT DEFAULT 'authorized'");
+  ensureCol("license_devices", "registered_at", "TEXT");
+  ensureCol("license_devices", "last_active", "TEXT DEFAULT (datetime('now', 'localtime'))");
+
+  // Ensure document_print_settings columns exist
+  ensureCol("document_print_settings", "company_name", "TEXT DEFAULT 'OmniSystem Pro'");
+  ensureCol("document_print_settings", "company_subtitle", "TEXT DEFAULT 'نظام نقاط البيع وإدارة الموارد'");
+  ensureCol("document_print_settings", "header_right_text_1", "TEXT DEFAULT 'معمل عبدالاسلام للخبز العربي'");
+  ensureCol("document_print_settings", "header_right_text_2", "TEXT DEFAULT 'عدن/المعلا'");
+  ensureCol("document_print_settings", "header_right_text_3", "TEXT DEFAULT '774106282'");
+  ensureCol("document_print_settings", "header_left_text_1", "TEXT DEFAULT 'قيس'");
+  ensureCol("document_print_settings", "header_left_text_2", "TEXT DEFAULT 'عدن/المعلا'");
+  ensureCol("document_print_settings", "header_left_text_3", "TEXT DEFAULT '771845734'");
+  ensureCol("document_print_settings", "address", "TEXT DEFAULT ''");
+  ensureCol("document_print_settings", "phone", "TEXT DEFAULT ''");
+  ensureCol("document_print_settings", "tax_number", "TEXT DEFAULT ''");
+  ensureCol("document_print_settings", "logo_url", "TEXT DEFAULT '/omnisystem-logo.png'");
+  ensureCol("document_print_settings", "customer_header_text", "TEXT DEFAULT 'كشف حساب عميل معتمد'");
+  ensureCol("document_print_settings", "customer_footer_text", "TEXT DEFAULT 'شكراً لتعاملكم معنا - يُرجى مراجعة الحسابات خلال 15 يوماً'");
+  ensureCol("document_print_settings", "supplier_header_text", "TEXT DEFAULT 'كشف حساب مورد معتمد'");
+  ensureCol("document_print_settings", "supplier_footer_text", "TEXT DEFAULT 'الرصيد المبين أعلاه خاضع للمطابقة والتدقيق المحاسبي.'");
+  ensureCol("document_print_settings", "employee_header_text", "TEXT DEFAULT 'كشف حساب ومسير رواتب موظف'");
+  ensureCol("document_print_settings", "employee_footer_text", "TEXT DEFAULT 'إدارة الموارد البشرية - التوقيع والاعتماد'");
+  ensureCol("document_print_settings", "voucher_receipt_title", "TEXT DEFAULT 'سند قبض'");
+  ensureCol("document_print_settings", "voucher_payment_title", "TEXT DEFAULT 'سند صرف'");
+  ensureCol("document_print_settings", "voucher_journal_title", "TEXT DEFAULT 'سند قيد يومية'");
+  ensureCol("document_print_settings", "voucher_footer_text", "TEXT DEFAULT 'المحاسب _______ المدير _______ المستلم _______'");
+  ensureCol("document_print_settings", "invoice_header_text", "TEXT DEFAULT 'فاتورة مبيعات ضريبية'");
+  ensureCol("document_print_settings", "invoice_footer_text", "TEXT DEFAULT 'شكراً لتعاملكم معنا — نتطلع لخدمتكم دائماً'");
+  ensureCol("document_print_settings", "report_header_text", "TEXT DEFAULT 'تقرير عام شامل'");
+  ensureCol("document_print_settings", "report_footer_text", "TEXT DEFAULT 'طبع بواسطة نظام OmniSystem Pro'");
+  ensureCol("document_print_settings", "show_logo", "INTEGER DEFAULT 1");
+  ensureCol("document_print_settings", "show_tax_number", "INTEGER DEFAULT 1");
+  ensureCol("document_print_settings", "show_branch_info", "INTEGER DEFAULT 1");
+  ensureCol("document_print_settings", "show_signature_boxes", "INTEGER DEFAULT 1");
+  ensureCol("document_print_settings", "show_stamp_box", "INTEGER DEFAULT 1");
+  ensureCol("document_print_settings", "accent_color", "TEXT DEFAULT '#2563eb'");
+
+  // Ensure users & groups columns
+  ensureCol("users", "user_code", "TEXT");
+  ensureCol("users", "is_suspended", "INTEGER DEFAULT 0");
+  ensureCol("users", "suspended_reason", "TEXT");
+  ensureCol("users", "phone", "TEXT");
+  ensureCol("users", "role", "TEXT DEFAULT 'cashier'");
+  ensureCol("users", "permissions", "TEXT");
+  ensureCol("users", "avatar_url", "TEXT");
+  ensureCol("users", "pin_code", "TEXT");
+  ensureCol("users", "branch_id", "INTEGER DEFAULT 1");
+  ensureCol("users", "email", "TEXT");
+  ensureCol("users", "group_id", "INTEGER");
+
+  ensureCol("user_groups", "is_suspended", "INTEGER DEFAULT 0");
+  ensureCol("user_groups", "suspended_reason", "TEXT");
+
+  // Ensure vouchers columns
+  ensureCol("vouchers", "header_title", "TEXT");
+  ensureCol("vouchers", "header_subtitle", "TEXT");
+  ensureCol("vouchers", "logo_url", "TEXT");
+  ensureCol("vouchers", "accent_color", "TEXT DEFAULT '#2563eb'");
+  ensureCol("vouchers", "bottom_text", "TEXT");
+  ensureCol("vouchers", "safe_id", "INTEGER");
+  ensureCol("vouchers", "bank_account_id", "INTEGER");
+  ensureCol("vouchers", "cost_center_id", "INTEGER");
+  ensureCol("vouchers", "amount_text", "TEXT");
+  ensureCol("vouchers", "received_from", "TEXT");
+  ensureCol("vouchers", "payment_against", "TEXT");
+  ensureCol("vouchers", "payment_method", "TEXT DEFAULT 'cash'");
+  ensureCol("vouchers", "reference_no", "TEXT");
+
+  // Ensure orders & items columns
+  ensureCol("orders", "status", "TEXT DEFAULT 'completed'");
+  ensureCol("orders", "customer_id", "INTEGER");
+  ensureCol("orders", "customer_name", "TEXT");
+  ensureCol("orders", "user_id", "INTEGER");
+  ensureCol("orders", "user_name", "TEXT");
+  ensureCol("orders", "branch_id", "INTEGER DEFAULT 1");
+  ensureCol("orders", "cash_amount", "REAL");
+  ensureCol("orders", "card_amount", "REAL");
+  ensureCol("orders", "credit_amount", "REAL");
+  ensureCol("orders", "employee_id", "INTEGER");
+  ensureCol("orders", "shift_id", "INTEGER");
+  ensureCol("orders", "notes", "TEXT");
+
+  ensureCol("order_items", "product_name", "TEXT");
+  ensureCol("order_items", "product_code", "TEXT");
+  ensureCol("order_items", "unit_price", "REAL");
+  ensureCol("order_items", "discount_amount", "REAL DEFAULT 0");
 
   // Alter existing travel_bookings with additional fields
   try { db.exec("ALTER TABLE travel_bookings ADD COLUMN airline_id INTEGER"); } catch {}
@@ -7912,4 +8068,70 @@ export function deleteJournalBySource(sourceType: string, sourceId: number): voi
     console.error("deleteJournalBySource error:", e);
   }
 }
+
+// Automatic Legacy Database Migration on First Boot
+export function autoMigrateLegacyDatabaseOnStartup() {
+  try {
+    const legacyPath = process.env.LEGACY_MIGRATE_DB_PATH;
+    if (legacyPath && existsSync(legacyPath)) {
+      console.log(`[Auto-Migration] Running automatic background migration from legacy database: ${legacyPath}`);
+      const legacyDb = new DatabaseWrapper(legacyPath);
+      const tablesRes = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as any[];
+      const sourceTables: string[] = tablesRes.map((t: any) => t.name);
+
+      db.exec("PRAGMA foreign_keys = OFF;");
+
+      function safeMigrate(targetTable: string, matchCol?: string) {
+        if (!sourceTables.includes(targetTable)) return 0;
+        try {
+          const targetCols = (db.prepare(`PRAGMA table_info("${targetTable}")`).all() as any[]).map(c => c.name);
+          const rows = legacyDb.prepare(`SELECT * FROM "${targetTable}"`).all() as any[];
+          let count = 0;
+          for (const r of rows) {
+            if (matchCol && r[matchCol]) {
+              const exists = db.prepare(`SELECT id FROM "${targetTable}" WHERE "${matchCol}" = ?`).get(r[matchCol]);
+              if (exists) continue;
+            }
+            const validKeys = Object.keys(r).filter(k => k !== "id" && targetCols.includes(k) && r[k] !== undefined);
+            if (validKeys.length === 0) continue;
+            const ph = validKeys.map(() => "?").join(", ");
+            const cols = validKeys.map(k => `"${k}"`).join(", ");
+            const vals = validKeys.map(k => r[k]);
+            db.prepare(`INSERT INTO "${targetTable}" (${cols}) VALUES (${ph})`).run(...vals);
+            count++;
+          }
+          return count;
+        } catch {
+          return 0;
+        }
+      }
+
+      const pCount = safeMigrate("products", "name");
+      const cCount = safeMigrate("customers", "name");
+      const sCount = safeMigrate("suppliers", "name");
+      const oCount = safeMigrate("orders");
+      const vCount = safeMigrate("vouchers");
+      const lCount = safeMigrate("licenses", "license_key");
+
+      db.exec("PRAGMA foreign_keys = ON;");
+      legacyDb.close();
+
+      try {
+        const backupName = `${legacyPath}.migrated_to_v2.bak`;
+        renameSync(legacyPath, backupName);
+        console.log(`[Auto-Migration] Legacy database archived to: ${backupName}`);
+      } catch (renErr) {
+        console.warn("[Auto-Migration] Could not rename legacy file:", renErr);
+      }
+
+      console.log(`[Auto-Migration] Completed: ${pCount} products, ${cCount} customers, ${sCount} suppliers, ${oCount} orders, ${vCount} vouchers, ${lCount} licenses migrated to omnisystem_pro_v2.db!`);
+    }
+  } catch (migErr) {
+    console.error("[Auto-Migration] Error during legacy database migration:", migErr);
+  }
+}
+
+try {
+  autoMigrateLegacyDatabaseOnStartup();
+} catch (e) {}
 

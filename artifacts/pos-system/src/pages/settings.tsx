@@ -55,6 +55,8 @@ export default function Settings() {
     allowCashierDiscount: false,
     receiptPaperSize: "80mm",
     showOrderNumber: true,
+    showDailyOrderNumber: true,
+    showMainInvoiceNumber: true,
     showTableNumber: true,
     showDateTime: true,
     showBarcode: false,
@@ -67,6 +69,7 @@ export default function Settings() {
     masterCopiesCount: 1,
     logoUrl: null,
     printMode: "browser",
+    autoSilentPrint: true,
     businessDayCutoffEnabled: true,
     businessDayCutoffTime: "03:00",
     businessDayRolloverHour: 3,
@@ -560,8 +563,10 @@ export default function Settings() {
                     ["printQr", "إظهار QR Code المعتمد (الربط الإلكتروني ZATCA)"],
                     ["showCashier", "إظهار اسم موظف المبيعات / الكاشير"],
                     ["showCustomer", "إظهار اسم العميل / الحساب"],
+                    ["showDailyOrderNumber", "إظهار رقم الفاتورة للطلب اليومي (تحت نص طلب يومي - يصفر يومياً ويبدأ من 1)"],
+                    ["showMainInvoiceNumber", "إظهار رقم الفاتورة الرئيسي (رقم البحث والمطابقة الدائم في النظام)"],
                     ["showOrderNumber", "إظهار الرقم المرجعي للفاتورة / الطلب"],
-                    ["showTableNumber", "إظهار رقم السند / المستودع"],
+                    ["showTableNumber", "إظهار رقم السند / الطاولة / المستودع"],
                     ["showDateTime", "إظهار تاريخ ووقت الإصدار"],
                     ["showBarcode", "إظهار الباركود المرجعي"],
                     ["showOrderType", "إظهار نوع الفاتورة (نقدي / آجل / جملة / تجزئة)"],
@@ -621,6 +626,22 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-xl">
                     تنويه: طباعة المتصفح تدعم إظهار الشعار ونفس التنسيق المبرمج بالملف بشكل مثالي، بينما الطباعة الصامتة ترسل نصوصًا خامًا مباشرة وتعتمد على إعدادات الحروف والعرض بالطابعة.
                   </p>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-xs bg-slate-50 dark:bg-slate-900">
+                  <div className="space-y-0.5">
+                    <label className="text-sm font-semibold flex items-center gap-1.5 cursor-pointer" htmlFor="autoSilentPrintSwitch">
+                      <span>🖨️ الطباعة التلقائية الصامتة فور تأكيد الدفع (إخفاء نافذة Print المنبثقة)</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      عند تفعيل هذا الخيار في تطبيق سطح المكتب، يقوم النظام بإرسال الفاتورة للطابعة الحرارية تلقائياً وفورياً في الخلفية بدون ظهور نافذة تأكيد الطباعة لنظام Windows لتسريع خدمة العملاء.
+                    </p>
+                  </div>
+                  <Switch
+                    id="autoSilentPrintSwitch"
+                    checked={form.autoSilentPrint !== false}
+                    onCheckedChange={v => setField("autoSilentPrint", v)}
+                  />
                 </div>
 
                 <div className="space-y-1">

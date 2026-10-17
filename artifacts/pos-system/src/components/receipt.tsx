@@ -1,6 +1,6 @@
 import type { Order } from "@workspace/api-client-react";
-import omnisystemLogo from "@/assets/images/omnisystem_pro_logo_1784250216808.png";
 import { getEffectiveDocPrintSettings } from "@/lib/printUtils";
+const omnisystemLogo = "/icon.png";
 
 type OrderType = "dine-in" | "takeout" | "delivery";
 
@@ -23,6 +23,8 @@ interface ReceiptSettings {
   showCashier?: boolean;
   showCustomer?: boolean;
   showOrderNumber?: boolean;
+  showDailyOrderNumber?: boolean;
+  showMainInvoiceNumber?: boolean;
   showTableNumber?: boolean;
   showDateTime?: boolean;
   showOrderType?: boolean;
@@ -117,7 +119,11 @@ export function MasterReceiptSlip({
   const currency = settings?.currency ?? "ريال";
   const taxRate = settings?.taxRate ?? 15;
   const orderTypeLabel = ORDER_TYPE_LABELS[order.orderType ?? "dine-in"] ?? "محلي";
-  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || "0";
+  const showDaily = settings?.showDailyOrderNumber !== false;
+  const showMain = settings?.showMainInvoiceNumber !== false;
+  const rawDaily = (order as any).dailyOrderNumber ?? (order as any).daily_order_number;
+  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || String(order.id || "0");
+  const dailyOrderNumber = rawDaily !== undefined && rawDaily !== null ? String(rawDaily) : cleanInvoiceNumber;
   const businessName = settings?.businessName || eff.companyName || "المطعم";
   const effectiveLogo =
     settings?.logoUrl && settings.logoUrl !== "null" && settings.logoUrl !== ""
@@ -149,6 +155,15 @@ export function MasterReceiptSlip({
       <div className="text-center font-black text-sm my-1 underline decoration-2 underline-offset-4">
         {eff.invoiceHeaderText || "فاتورة خاصة بالزبون"}
       </div>
+      {/* ── رقم الفاتورة الرئيسي الدائم للبحث والمطابقة ── */}
+      {showMain && (
+        <div className="flex justify-between items-center text-xs px-1 border-t border-dashed border-black/40 pt-1 my-1 font-bold">
+          <span className="text-[10px] text-gray-700">رقم الفاتورة الرئيسي:</span>
+          <span className="font-mono font-black text-xs text-black dir-ltr">
+            <Num>#{order.invoiceNumber || cleanInvoiceNumber}</Num>
+          </span>
+        </div>
+      )}
 
       {/* ── صف البيانات الفرعي الدقيق جداً المماثل للصورة المرفقة ── */}
       <div className="flex justify-between items-stretch text-xs px-1 border-t border-b border-black py-1.5 my-1.5 gap-2">
@@ -163,10 +178,22 @@ export function MasterReceiptSlip({
           )}
         </div>
         
-        {/* الوسط: رقم الفاتورة الكبير (المسلسل) ورقم الطاولة بالأسفل */}
+        {/* الوسط: رقم الطلب اليومي تحت نص "طلب يومي" ورقم الطاولة بالأسفل */}
         <div className="flex flex-col items-center justify-center px-1">
-          <span className="text-5xl font-black text-black leading-none tracking-tighter"><Num>{cleanInvoiceNumber}</Num></span>
-          <span className="text-sm font-black text-black mt-1 leading-none"><Num>{order.tableNumber || "0"}</Num></span>
+          {showDaily ? (
+            <>
+              <span className="text-[11px] font-black text-black leading-none mb-1 tracking-tight">طلب يومي</span>
+              <span className="text-5xl font-black text-black leading-none tracking-tighter"><Num>{dailyOrderNumber}</Num></span>
+            </>
+          ) : showMain ? (
+            <>
+              <span className="text-[9px] font-bold text-gray-600 leading-none mb-1">رقم الفاتورة</span>
+              <span className="text-4xl font-black text-black leading-none tracking-tighter"><Num>{cleanInvoiceNumber}</Num></span>
+            </>
+          ) : null}
+          {settings?.showTableNumber !== false && (
+            <span className="text-sm font-black text-black mt-1 leading-none"><Num>{order.tableNumber || "0"}</Num></span>
+          )}
         </div>
 
         {/* اليمين: المباشر */}
@@ -291,7 +318,11 @@ export function DeptReceiptSlip({
   const orderTypeLabel = ORDER_TYPE_LABELS[order.orderType ?? "dine-in"] ?? "محلي";
   const currency = settings?.currency ?? "ريال";
   const deptTotal = items.reduce((s, i) => s + (i.unitPrice ?? 0) * i.quantity, 0);
-  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || "0";
+  const showDaily = settings?.showDailyOrderNumber !== false;
+  const showMain = settings?.showMainInvoiceNumber !== false;
+  const rawDaily = (order as any).dailyOrderNumber ?? (order as any).daily_order_number;
+  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || String(order.id || "0");
+  const dailyOrderNumber = rawDaily !== undefined && rawDaily !== null ? String(rawDaily) : cleanInvoiceNumber;
 
   return (
     <div className="receipt-slip receipt-dept-slip" dir="rtl">
@@ -312,14 +343,30 @@ export function DeptReceiptSlip({
           </div>
           <div className="flex justify-between items-center w-full mt-1.5">
             <span className="font-black text-xs text-black"><Num>{date}</Num></span>
-            <span className="font-black text-xs text-black bg-gray-100 px-1 border border-black rounded-sm">2</span>
+            {showMain && (
+              <span className="font-mono font-black text-[10px] text-black bg-gray-100 px-1 border border-black rounded-sm" title="رقم الفاتورة الرئيسي">
+                #{order.invoiceNumber || cleanInvoiceNumber}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* الوسط: نوع الطلب ورقم الفاتورة الكبير */}
+        {/* الوسط: نوع الطلب ورقم الطلب اليومي تحت نص "طلب يومي" */}
         <div className="flex flex-col items-center justify-center px-1.5 border-l border-r border-black flex-1">
-          <span className="receipt-order-type-badge font-black text-xs border-2 border-black bg-white text-black px-2 py-0.5 rounded-md leading-none mb-1">{orderTypeLabel}</span>
-          <span className="text-4xl font-black text-black leading-none tracking-tighter"><Num>{cleanInvoiceNumber}</Num></span>
+          {settings?.showOrderType !== false && (
+            <span className="receipt-order-type-badge font-black text-xs border-2 border-black bg-white text-black px-2 py-0.5 rounded-md leading-none mb-1">{orderTypeLabel}</span>
+          )}
+          {showDaily ? (
+            <>
+              <span className="text-[10px] font-black text-black leading-none mb-0.5">طلب يومي</span>
+              <span className="text-4xl font-black text-black leading-none tracking-tighter"><Num>{dailyOrderNumber}</Num></span>
+            </>
+          ) : showMain ? (
+            <>
+              <span className="text-[9px] font-bold text-gray-600 leading-none mb-0.5">رقم الفاتورة</span>
+              <span className="text-3xl font-black text-black leading-none tracking-tighter"><Num>{cleanInvoiceNumber}</Num></span>
+            </>
+          ) : null}
         </div>
 
         {/* اليمين: رمز "ط" ورقم الطاولة بالأسفل */}

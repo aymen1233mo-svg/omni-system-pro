@@ -16,6 +16,16 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlToken = searchParams.get("auth_token") || searchParams.get("token");
+    if (urlToken && urlToken.trim()) {
+      const cleanToken = urlToken.trim();
+      sessionStorage.setItem("pos_token", cleanToken);
+      localStorage.setItem("pos_token", cleanToken);
+      return cleanToken;
+    }
+  } catch (e) {}
   return sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token");
 }
 

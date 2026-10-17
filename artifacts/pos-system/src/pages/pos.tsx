@@ -82,7 +82,11 @@ function generateReceiptText(order: Order, settings: any, cashierName: string, p
     return " ".repeat(padLen) + s;
   };
   const line = (ch = "-") => ch.repeat(w);
-  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || "0";
+  const showDaily = settings?.showDailyOrderNumber !== false;
+  const showMain = settings?.showMainInvoiceNumber !== false;
+  const rawDaily = (order as any).dailyOrderNumber ?? (order as any).daily_order_number;
+  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || String(order.id || "0");
+  const dailyOrderNumber = rawDaily !== undefined && rawDaily !== null ? String(rawDaily) : cleanInvoiceNumber;
 
   // Top margin in newlines
   const topMarginLines = Math.max(0, Math.floor((printerSettings?.topMargin ?? 0) / 4));
@@ -94,7 +98,15 @@ function generateReceiptText(order: Order, settings: any, cashierName: string, p
   if (settings?.address) lines.push(center(settings.address));
   lines.push(line("."));
   lines.push(center("فاتورة خاصة بالزبون"));
-  lines.push(center(`الرقم المسلسل: [ ${cleanInvoiceNumber} ]`));
+  if (showDaily) {
+    lines.push(center(`طلب يومي: [ ${dailyOrderNumber} ]`));
+  }
+  if (showMain) {
+    lines.push(center(`رقم الفاتورة الرئيسي: #${order.invoiceNumber || cleanInvoiceNumber}`));
+  }
+  if (!showDaily && !showMain) {
+    lines.push(center(`الرقم المسلسل: [ ${cleanInvoiceNumber} ]`));
+  }
   lines.push(line("."));
   let s1 = String(order.createdAt || "").trim();
   if (s1.includes(" ")) s1 = s1.replace(" ", "T");
@@ -155,7 +167,11 @@ function generateDeptReceiptText(order: Order, dept: any, items: any[], settings
     return " ".repeat(padLen) + s;
   };
   const line = (ch = "-") => ch.repeat(w);
-  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || "0";
+  const showDaily = settings?.showDailyOrderNumber !== false;
+  const showMain = settings?.showMainInvoiceNumber !== false;
+  const rawDaily = (order as any).dailyOrderNumber ?? (order as any).daily_order_number;
+  const cleanInvoiceNumber = order.invoiceNumber.replace(/^INV-0*/, "") || String(order.id || "0");
+  const dailyOrderNumber = rawDaily !== undefined && rawDaily !== null ? String(rawDaily) : cleanInvoiceNumber;
 
   // Top margin in newlines
   const topMarginLines = Math.max(0, Math.floor((printerSettings?.topMargin ?? 0) / 4));
@@ -166,7 +182,15 @@ function generateDeptReceiptText(order: Order, dept: any, items: any[], settings
   lines.push(center(settings?.businessName ?? "المطعم"));
   lines.push(center(`قسم: ${dept.categoryName}`));
   lines.push(line("."));
-  lines.push(center(`أمر صرف رقم: [ ${cleanInvoiceNumber} ]`));
+  if (showDaily) {
+    lines.push(center(`طلب يومي: [ ${dailyOrderNumber} ]`));
+  }
+  if (showMain) {
+    lines.push(center(`أمر صرف رقم الفاتورة: #${order.invoiceNumber || cleanInvoiceNumber}`));
+  }
+  if (!showDaily && !showMain) {
+    lines.push(center(`أمر صرف رقم: [ ${cleanInvoiceNumber} ]`));
+  }
   lines.push(line("-"));
   let s2 = String(order.createdAt || "").trim();
   if (s2.includes(" ")) s2 = s2.replace(" ", "T");
@@ -1369,7 +1393,25 @@ export default function Pos() {
       });
     });
 
-    window.print();
+    const electron = (window as any).electronAPI;
+    const isElectron = Boolean(electron && typeof electron.printSilent === "function");
+    const autoSilentEnabled = (settings as any)?.autoSilentPrint !== false;
+
+    if (isElectron && autoSilentEnabled) {
+      try {
+        const targetPrinter = (printerSettings as any)?.mainPrinterName || "";
+        const printResult = await electron.printSilent(targetPrinter);
+        if (!printResult || !printResult.success) {
+          console.warn("Electron silent print returned failure, falling back to window.print():", printResult?.failureReason);
+          window.print();
+        }
+      } catch (err) {
+        console.warn("Electron printSilent invocation error, falling back to window.print():", err);
+        window.print();
+      }
+    } else {
+      window.print();
+    }
 
     document.body.classList.remove("pos-printing-active");
     document.getElementById(standaloneRootId)?.remove();
@@ -1928,11 +1970,11 @@ export default function Pos() {
           <div className="flex items-center gap-2 shrink-0">
             <div
               className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/15 border border-emerald-400/40 rounded text-emerald-300 font-bold text-xs select-none"
-              title={`رقم الفاتورة القادمة ليوم العمل النشط (${nextInvoiceCounter?.activeBusinessDate || "اليوم"}) — يتم تصفير العداد تلقائياً إلى 1 عند تقليب يوم العمل (${nextInvoiceCounter?.cutoffTime || "03:00"})`}
+              title={`رقم الطلب اليومي القادم ليوم العمل النشط (${nextInvoiceCounter?.activeBusinessDate || "اليوم"}) — يتم تصفير العداد تلقائياً إلى 1 عند كل يوم جديد (${nextInvoiceCounter?.cutoffTime || "03:00"}) | الفاتورة الرئيسية: #${nextInvoiceCounter?.nextMainInvoiceNumber || "INV-00001"}`}
             >
-              <span className="text-[10px] text-emerald-200/90">الفاتورة القادمة:</span>
+              <span className="text-[10px] text-emerald-200/90">طلب يومي:</span>
               <span className="font-mono font-black text-emerald-300">
-                #{nextInvoiceCounter?.nextInvoiceNumber || "1"}
+                #{nextInvoiceCounter?.nextDailyNumber || nextInvoiceCounter?.nextInvoiceNumber || "1"}
               </span>
             </div>
 
@@ -1956,9 +1998,22 @@ export default function Pos() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.open("/pos", "_blank", "width=1366,height=768,menubar=no,status=no,toolbar=no")}
+              onClick={() => {
+                const token = localStorage.getItem("pos_token") || sessionStorage.getItem("pos_token") || "";
+                const electron = (window as any).electronAPI;
+                if (electron && typeof electron.openPosWindow === "function") {
+                  electron.openPosWindow(token);
+                  return;
+                }
+                if (electron && typeof electron.invoke === "function") {
+                  electron.invoke("open-pos-window", { token });
+                  return;
+                }
+                const targetUrl = token ? `/pos?auth_token=${encodeURIComponent(token)}` : `/pos`;
+                window.open(targetUrl, "_blank", "width=1366,height=768,menubar=no,status=no,toolbar=no,location=no");
+              }}
               className="h-7 text-[11px] font-bold bg-white/10 hover:bg-white/20 text-slate-200 border-white/20 px-2.5 gap-1.5 shadow-xs"
-              title="فتح شاشة كاشير إضافية في نافذة متصفح مستقلة"
+              title="فتح شاشة كاشير إضافية في نافذة إلكترون مستقلة"
             >
               <span>🗗</span>
               <span className="hidden sm:inline">نافذة مستقلة جديدة</span>
@@ -1981,17 +2036,17 @@ export default function Pos() {
                 </span>
               )}
             </p>
-            <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto no-scrollbar">
+            <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto no-scrollbar">
               <button
                 onClick={() => setSelectedCategory(null)}
                 className={cn(
-                  "px-2.5 py-1 text-[11px] rounded-md font-bold transition-all flex items-center gap-1",
+                  "px-2 py-0.5 text-[10px] rounded font-bold transition-all flex items-center gap-1 shrink-0",
                   selectedCategory === null
-                    ? "bg-amber-400 text-[#0f1e3c] shadow-xs"
+                    ? "bg-amber-400 text-[#0f1e3c] shadow-xs font-black"
                     : "bg-white/10 text-white hover:bg-white/20"
                 )}
               >
-                <span>🏷️</span>
+                <span className="text-[9px]">🏷️</span>
                 <span>الكل</span>
               </button>
               {categories.map(cat => {
@@ -2002,17 +2057,17 @@ export default function Pos() {
                     key={cat.id}
                     onClick={() => setSelectedCategory(cat.id)}
                     className={cn(
-                      "px-2.5 py-1 text-[11px] rounded-md font-bold transition-all flex items-center gap-1 border",
+                      "px-2 py-0.5 text-[10px] rounded font-bold transition-all flex items-center gap-1 border shrink-0",
                       isCatActive
                         ? "bg-amber-400 text-[#0f1e3c] border-amber-500 shadow-xs font-black"
                         : "bg-white/10 text-white border-white/10 hover:bg-white/20"
                     )}
                   >
                     <span
-                      className="w-2 h-2 rounded-full shrink-0 border border-white/40"
+                      className="w-1.5 h-1.5 rounded-full shrink-0 border border-white/40"
                       style={{ backgroundColor: catColor }}
                     />
-                    <span>{cat.name}</span>
+                    <span className="truncate max-w-[150px]">{cat.name}</span>
                   </button>
                 );
               })}

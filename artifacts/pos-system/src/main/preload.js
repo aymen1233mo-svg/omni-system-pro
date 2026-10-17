@@ -12,4 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   printSilent: (printerName) => ipcRenderer.invoke('print-silent', printerName),
+  openPosWindow: (token) => ipcRenderer.invoke('open-pos-window', { token }),
+  openWindow: (options) => ipcRenderer.invoke('open-window', options),
 });

@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Printer, Download, TrendingUp, ShoppingBag, Users, Tag, Maximize2, FileDown, Eye, RotateCcw } from "lucide-react";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { saveA4PdfToFile } from "@/lib/printUtils";
+import { MasterReceiptSlip } from "@/components/receipt";
 
 const COLORS = ["#1e3a5f", "#3b82f6", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#ef4444", "#06b6d4"];
 
@@ -76,6 +77,17 @@ export default function Reports() {
   const [viewerHtml, setViewerHtml] = useState("");
   const [viewerTitle, setViewerTitle] = useState("");
   const printRef = useRef<HTMLDivElement>(null);
+
+  const [selectedCashier, setSelectedCashier] = useState<any | null>(null);
+  const [cashierOrdersModalOpen, setCashierOrdersModalOpen] = useState(false);
+  const [selectedOrderForPreview, setSelectedOrderForPreview] = useState<any | null>(null);
+  const [orderPreviewModalOpen, setOrderPreviewModalOpen] = useState(false);
+
+  const { data: cashierOrders = [], isLoading: isCashierOrdersLoading } = useQuery<any[]>({
+    queryKey: ["cashier-orders", selectedCashier?.userId, startDate, endDate],
+    queryFn: () => fetchWithAuth(`/api/orders?userId=${selectedCashier?.userId}&startDate=${startDate}&endDate=${endDate}`),
+    enabled: Boolean(selectedCashier?.userId && cashierOrdersModalOpen)
+  });
 
   const getReportHtmlContent = () => {
     if (printRef.current) {
@@ -160,6 +172,7 @@ export default function Reports() {
   const productTotalOrders = (productRows || []).reduce((s, r: any) => s + (r.orderCount || 0), 0);
   const productTotalRevenue = (productRows || []).reduce((s, r: any) => s + (r.totalRevenue || 0), 0);
   const productTotalProfit = (productRows || []).reduce((s, r: any) => s + (r.totalProfit || 0), 0);
+  const productTotalCashRevenue = (productRows || []).reduce((s, r: any) => s + (r.netCashRevenue || r.cashRevenue || 0), 0);
 
   const handlePrint = () => {
     const styleId = "__report-dynamic-print__";
@@ -283,47 +296,148 @@ export default function Reports() {
             )}
 
             {tab === "category" && (
-              <div style={{ fontSize: "11px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", borderBottom: "1px dashed #000", paddingBottom: "2px" }}>
-                  <span>الفئة / القسم</span>
-                  <span>الكمية</span>
-                  <span>إجمالي المبيعات</span>
-                </div>
-                {categoryRows.map((cat: any, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", margin: "4px 0" }}>
-                    <span style={{ fontWeight: "bold" }}>{cat.categoryName}</span>
-                    <span>{cat.totalQty}</span>
-                    <span style={{ fontWeight: "bold" }}>{fmt(cat.totalRevenue)}</span>
+              <div style={{ fontSize: "11px", width: "100%", color: "#000" }}>
+                {categoryRows.map((cat: any, catIdx: number) => {
+                  const items = (cat.items && cat.items.length > 0)
+                    ? cat.items
+                    : (productRows || []).filter((p: any) => 
+                        (cat.categoryId && p.categoryId === cat.categoryId) || 
+                        (cat.categoryName && p.categoryName === cat.categoryName)
+                      );
+                  return (
+                    <div key={`cat-therm-${cat.categoryId || ''}-${cat.categoryName || ''}-${catIdx}`} style={{ marginBottom: "10px" }}>
+                      {/* اسم الفئة / القسم: بخط عريض وبدون أي خلفية لونية (شفافة) لضمان عدم التشويه في الطابعات الحرارية */}
+                      <div style={{ 
+                        fontSize: "13px", 
+                        fontWeight: "900", 
+                        color: "#000", 
+                        background: "transparent", 
+                        padding: "3px 0", 
+                        borderBottom: "1.5px solid #000",
+                        marginBottom: "4px"
+                      }}>
+                        اسم الفئة / القسم: {cat.categoryName}
+                      </div>
+
+                      {/* جدول مخطط بتصميم عصري وأنيق يحتوي على 3 أعمدة فقط للتوافق التام مع الطابعات الحرارية */}
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10.5px", marginBottom: "4px" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "right", fontWeight: "900", width: "50%", background: "transparent" }}>اسم المنتج</th>
+                            <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "center", fontWeight: "900", width: "22%", background: "transparent" }}>عدد المبيعات</th>
+                            <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "left", fontWeight: "900", width: "28%", background: "transparent" }}>إجمالي المبيعات</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((it: any, itIdx: number) => (
+                            <tr key={`cat-item-${itIdx}`}>
+                              <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "right", fontWeight: "700", wordBreak: "break-word" }}>{it.productName}</td>
+                              <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "center", fontWeight: "700" }}>{it.totalQty}</td>
+                              <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "left", fontWeight: "900" }}>{fmt(it.totalRevenue)}</td>
+                            </tr>
+                          ))}
+                          {items.length === 0 && (
+                            <tr>
+                              <td colSpan={3} style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "center", color: "#555" }}>
+                                لا توجد منتجات مباعة في هذا القسم
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* إجمالي قسم / فئة في نهاية كل قسم بخط عريض */}
+                      <div style={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: "center", 
+                        borderTop: "1.5px solid #000", 
+                        borderBottom: "1.5px solid #000", 
+                        padding: "3px 2px", 
+                        fontWeight: "900", 
+                        fontSize: "11px",
+                        margin: "3px 0 8px 0"
+                      }}>
+                        <span>إجمالي قسم / فئة:</span>
+                        <span>{cat.totalQty} مبيعات</span>
+                        <span>{fmt(cat.totalRevenue)} {currency}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* الإجمالي الكلي لجميع الفئات والأقسام في نهاية الفاتورة الواحدة المتصلة */}
+                <div style={{ 
+                  borderTop: "2px solid #000", 
+                  borderBottom: "2px solid #000", 
+                  padding: "6px 2px", 
+                  marginTop: "8px", 
+                  fontWeight: "900", 
+                  fontSize: "11.5px" 
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                    <span>الإجمالي الكلي لجميع الفئات:</span>
+                    <span>{fmt(categoryTotalRevenue)} {currency}</span>
                   </div>
-                ))}
-                <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "12px" }}>
-                  <span>الإجمالي الكلي</span>
-                  <span>{categoryTotalQty}</span>
-                  <span>{fmt(categoryTotalRevenue)} {currency}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", fontWeight: "800" }}>
+                    <span>إجمالي عدد الفواتير: {categoryTotalOrders}</span>
+                    <span>إجمالي الكميات المباعة: {categoryTotalQty}</span>
+                  </div>
                 </div>
               </div>
             )}
 
             {tab === "product" && (
-              <div style={{ fontSize: "11px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", borderBottom: "1px dashed #000", paddingBottom: "2px" }}>
-                  <span>اسم المنتج</span>
-                  <span>الكمية</span>
-                  <span>إجمالي المبيعات</span>
-                </div>
-                {productRows.map((r: any, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", margin: "4px 0", borderBottom: "1px dotted #ccc", paddingBottom: "2px" }}>
-                    <span style={{ fontWeight: "bold", maxWidth: "130px", wordBreak: "break-word" }}>{r.productName}</span>
-                    <span>{r.totalQty}</span>
-                    <span style={{ fontWeight: "bold" }}>{fmt(r.totalRevenue)}</span>
+              <div style={{ fontSize: "11px", width: "100%", color: "#000" }}>
+                {/* جدول مخطط بتصميم عصري وأنيق يحتوي على 3 أعمدة فقط للتوافق التام مع الطابعات الحرارية */}
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10.5px", marginBottom: "4px" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "right", fontWeight: "900", width: "50%", background: "transparent" }}>اسم المنتج</th>
+                      <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "center", fontWeight: "900", width: "22%", background: "transparent" }}>عدد المبيعات</th>
+                      <th style={{ border: "1px solid #000", padding: "4px 2px", textAlign: "left", fontWeight: "900", width: "28%", background: "transparent" }}>إجمالي المبيعات</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productRows.map((r: any, i) => (
+                      <tr key={`thermal-prod-${i}`}>
+                        <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "right", fontWeight: "700", wordBreak: "break-word" }}>{r.productName}</td>
+                        <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "center", fontWeight: "700" }}>{r.totalQty}</td>
+                        <td style={{ border: "1px solid #000", padding: "3px 2px", textAlign: "left", fontWeight: "900" }}>{fmt(r.totalRevenue)}</td>
+                      </tr>
+                    ))}
+                    {productRows.length === 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ border: "1px solid #000", padding: "6px 2px", textAlign: "center", color: "#555" }}>
+                          لا توجد مبيعات منتجات مسجلة
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+
+                {/* الإجمالي الكلي وإجمالي المبلغ النقدي بدون المرتجعات والفواتير الأجل */}
+                <div style={{ 
+                  borderTop: "2px solid #000", 
+                  borderBottom: "2px solid #000", 
+                  padding: "6px 2px", 
+                  marginTop: "6px", 
+                  fontWeight: "900", 
+                  fontSize: "11px" 
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                    <span>إجمالي المبلغ الكلي النقدي (بدون المرتجعات والأجل):</span>
+                    <span>{fmt(productTotalCashRevenue)} {currency}</span>
                   </div>
-                ))}
-                <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "12px" }}>
-                  <span>الإجمالي الكلي</span>
-                  <span>{productTotalQty}</span>
-                  <span>{fmt(productTotalRevenue)} {currency}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                    <span>الإجمالي الكلي (مع كل شيء):</span>
+                    <span>{fmt(productTotalRevenue)} {currency}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", fontWeight: "800", borderTop: "1px dashed #000", paddingTop: "3px" }}>
+                    <span>عدد الأصناف: {productRows.length}</span>
+                    <span>إجمالي الكمية: {productTotalQty}</span>
+                    <span>عدد الفواتير: {productTotalOrders}</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -424,78 +538,115 @@ export default function Reports() {
             )}
 
             {tab === "product" && (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", textAlign: "right" }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", color: "#000", fontWeight: "bold" }}>
-                    <th style={{ border: "1px solid #64748b", padding: "10px", textAlign: "right" }}>اسم المنتج</th>
-                    <th style={{ border: "1px solid #64748b", padding: "10px", textAlign: "center" }}>عدد الكميه المباعه</th>
-                    <th style={{ border: "1px solid #64748b", padding: "10px", textAlign: "left" }}>المبلغ ({currency})</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productRows.map((r: any, i: number) => (
-                    <tr key={`product-row-${r.productId || ''}-${r.productName || ''}-${i}`} style={{ background: i % 2 === 0 ? "#ffffff" : "#f8fafc" }}>
-                      <td style={{ border: "1px solid #cbd5e1", padding: "8px", fontWeight: "bold" }}>{r.productName}</td>
-                      <td style={{ border: "1px solid #cbd5e1", padding: "8px", textAlign: "center" }}>{r.totalQty}</td>
-                      <td style={{ border: "1px solid #cbd5e1", padding: "8px", textAlign: "left", fontWeight: "bold" }}>{fmt(r.totalRevenue)}</td>
+              <div style={{ width: "100%" }}>
+                {/* ملخص المبالغ النقدية والإجمالية */}
+                <div style={{ display: "flex", gap: "12px", marginBottom: "14px" }}>
+                  <div style={{ flex: 1, border: "1.5px solid #059669", background: "#ecfdf5", padding: "10px 14px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "#065f46", fontWeight: "bold" }}>إجمالي المبلغ الكلي النقدي (بدون المرتجعات والفواتير الأجل)</div>
+                    <div style={{ fontSize: "16px", color: "#047857", fontWeight: "900", marginTop: "3px" }}>{fmt(productTotalCashRevenue)} {currency}</div>
+                  </div>
+                  <div style={{ flex: 1, border: "1.5px solid #1e3a5f", background: "#f8fafc", padding: "10px 14px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "#334155", fontWeight: "bold" }}>الإجمالي الكلي (مع كل شيء - نقدي، شبكة، آجل)</div>
+                    <div style={{ fontSize: "16px", color: "#0f172a", fontWeight: "900", marginTop: "3px" }}>{fmt(productTotalRevenue)} {currency}</div>
+                  </div>
+                </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "right" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", color: "#000", fontWeight: "bold" }}>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center", width: "35px" }}>#</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "right" }}>اسم المنتج</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "right" }}>الفئة / القسم</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center" }}>سعر الوحدة</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center" }}>عدد المبيعات (الكمية المباعة)</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center" }}>عدد الفواتير</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "left" }}>إجمالي المبيعات ({currency})</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "left" }}>إجمالي الربح ({currency})</th>
                     </tr>
-                  ))}
-                  {productRows.length === 0 && (
-                    <tr><td colSpan={3} style={{ border: "1px solid #cbd5e1", padding: "16px", textAlign: "center", color: "#666" }}>لا توجد مبيعات للمنتجات في هذه الفترة</td></tr>
+                  </thead>
+                  <tbody>
+                    {productRows.map((r: any, i: number) => (
+                      <tr key={`product-row-${r.productId || ''}-${r.productName || ''}-${i}`} style={{ background: i % 2 === 0 ? "#ffffff" : "#f8fafc" }}>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "center", fontWeight: "bold" }}>{i + 1}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", fontWeight: "bold" }}>{r.productName}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px" }}>{r.categoryName || "-"}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "center" }}>{fmt(r.unitPrice ?? (r.totalQty > 0 ? r.totalRevenue / r.totalQty : 0))}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "center", fontWeight: "bold" }}>{r.totalQty}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "center" }}>{r.orderCount}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "left", fontWeight: "bold" }}>{fmt(r.totalRevenue)}</td>
+                        <td style={{ border: "1px solid #e2e8f0", padding: "6px", textAlign: "left", color: "#16a34a", fontWeight: "bold" }}>{fmt(r.totalProfit)}</td>
+                      </tr>
+                    ))}
+                    {productRows.length === 0 && (
+                      <tr><td colSpan={8} style={{ border: "1px solid #cbd5e1", padding: "16px", textAlign: "center", color: "#666" }}>لا توجد مبيعات للمنتجات في هذه الفترة</td></tr>
+                    )}
+                  </tbody>
+                  {productRows.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: "#f1f5f9", fontWeight: "bold", fontSize: "13px" }}>
+                        <td colSpan={4} style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "right", fontWeight: "900" }}>الإجمالي الكلي لجميع المنتجات</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center", fontWeight: "900" }}>{productTotalQty}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "center" }}>{productTotalOrders}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "left", fontWeight: "900" }}>{fmt(productTotalRevenue)} {currency}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 6px", textAlign: "left", color: "#16a34a", fontWeight: "900" }}>{fmt(productTotalProfit)} {currency}</td>
+                      </tr>
+                    </tfoot>
                   )}
-                </tbody>
-                {productRows.length > 0 && (
-                  <tfoot>
-                    <tr style={{ background: "#e2e8f0", fontWeight: "bold", fontSize: "14px" }}>
-                      <td style={{ border: "1px solid #64748b", padding: "10px", textAlign: "right" }}>الإجمالي الكلي</td>
-                      <td style={{ border: "1px solid #64748b", padding: "10px", textAlign: "center" }}>{productTotalQty}</td>
-                      <td style={{ border: "1px solid #64748b", padding: "10px", textAlign: "left" }}>{fmt(productTotalRevenue)} {currency}</td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+                </table>
+              </div>
             )}
 
             {tab === "category" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}>
                 
                 {/* Category Sales Summary (ملخص مبيعات الأقسام) */}
-                <div style={{ marginBottom: "20px", border: "1.5px solid #cbd5e1", borderRadius: "8px", overflow: "hidden" }}>
-                  <div style={{ background: "#0f172a", color: "#fff", padding: "8px 12px", fontWeight: "bold", fontSize: "14px" }}>
+                <div style={{ marginBottom: "16px", border: "1.5px solid #cbd5e1", borderRadius: "8px", overflow: "hidden" }}>
+                  <div style={{ background: "#f8fafc", color: "#000", borderBottom: "2px solid #000", padding: "8px 12px", fontWeight: "900", fontSize: "14px" }}>
                     📊 ملخص مبيعات الأقسام والفئات (Category Summary)
                   </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", textAlign: "right" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
                     <thead>
-                      <tr style={{ background: "#f8fafc", fontWeight: "bold" }}>
-                        <th style={{ border: "1px solid #cbd5e1", padding: "10px" }}>اسم القسم أو المجموعة</th>
-                        <th style={{ border: "1px solid #cbd5e1", padding: "10px", textAlign: "left" }}>إجمالي مبلغ مبيعات القسم</th>
+                      <tr style={{ background: "#f1f5f9", fontWeight: "bold" }}>
+                        <th style={{ border: "1px solid #cbd5e1", padding: "8px 10px" }}>اسم القسم أو المجموعة</th>
+                        <th style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center" }}>الكمية المباعة</th>
+                        <th style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center" }}>عدد الفواتير</th>
+                        <th style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "left" }}>إجمالي مبلغ مبيعات القسم</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(categoryRows || []).map((cat: any, idx: number) => (
-                        <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f1f5f9" }}>
-                          <td style={{ border: "1px solid #cbd5e1", padding: "10px", fontWeight: "bold" }}>{cat.categoryName}</td>
-                          <td style={{ border: "1px solid #cbd5e1", padding: "10px", textAlign: "left", fontWeight: "bold", color: "#0d9488" }}>{fmt(cat.totalRevenue)} {currency}</td>
+                        <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                          <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", fontWeight: "bold" }}>{cat.categoryName}</td>
+                          <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center", fontWeight: "bold" }}>{cat.totalQty}</td>
+                          <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center" }}>{cat.orderCount}</td>
+                          <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "left", fontWeight: "bold", color: "#0d9488" }}>{fmt(cat.totalRevenue)} {currency}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr style={{ background: "#e2e8f0", fontWeight: "bold" }}>
-                        <td style={{ border: "1px solid #cbd5e1", padding: "10px" }}>الإجمالي الكلي</td>
-                        <td style={{ border: "1px solid #cbd5e1", padding: "10px", textAlign: "left", color: "#0f766e" }}>{fmt(categoryTotalRevenue)} {currency}</td>
+                      <tr style={{ background: "#f1f5f9", fontWeight: "bold", fontSize: "13px" }}>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", fontWeight: "900" }}>الإجمالي الكلي</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center", fontWeight: "900" }}>{categoryTotalQty}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "center" }}>{categoryTotalOrders}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: "8px 10px", textAlign: "left", fontWeight: "900", color: "#0f766e" }}>{fmt(categoryTotalRevenue)} {currency}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
 
                 {categoryRows.map((cat: any, catIdx: number) => {
-                  const items = cat.items || [];
+                  const items = (cat.items && cat.items.length > 0)
+                    ? cat.items
+                    : (productRows || []).filter((p: any) => 
+                        (cat.categoryId && p.categoryId === cat.categoryId) || 
+                        (cat.categoryName && p.categoryName === cat.categoryName)
+                      );
                   return (
-                    <div key={`cat-block-${cat.categoryId || ''}-${cat.categoryName || ''}-${catIdx}`} style={{ border: "1.5px solid #475569", borderRadius: "6px", overflow: "hidden", marginBottom: "12px" }}>
-                      {/* Category Header Bar */}
-                      <div style={{ background: "#1e293b", color: "#ffffff", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: "14px" }}>
-                        <span>📂 قسم / فئة المنتج: {cat.categoryName}</span>
-                        <span>إجمالي المبيعات: {fmt(cat.totalRevenue)} {currency} | الكمية المباعة: {cat.totalQty} | الفواتير: {cat.orderCount}</span>
+                    <div key={`cat-block-${cat.categoryId || ''}-${cat.categoryName || ''}-${catIdx}`} style={{ border: "1.5px solid #000", borderRadius: "6px", overflow: "hidden", marginBottom: "16px" }}>
+                      {/* Category Header Bar — بدون أي خلفيات داكنة تشوه في الطباعة أو تستنزف الحبر */}
+                      <div style={{ background: "#f8fafc", color: "#000", borderBottom: "2px solid #000", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "900", fontSize: "14px" }}>
+                        <span style={{ fontWeight: "900" }}>📂 اسم الفئة / القسم: {cat.categoryName}</span>
+                        <span style={{ fontSize: "12px", fontWeight: "bold" }}>إجمالي مبيعات الفئة: {fmt(cat.totalRevenue)} {currency} | الكمية المباعة: {cat.totalQty} | الفواتير: {cat.orderCount}</span>
                       </div>
 
                       {/* Detailed Product Sub-Table */}
@@ -530,12 +681,12 @@ export default function Reports() {
                           )}
                         </tbody>
                         <tfoot>
-                          <tr style={{ background: "#e2e8f0", fontWeight: "bold", fontSize: "12px" }}>
-                            <td colSpan={4} style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "right" }}>إجمالي فئة ({cat.categoryName})</td>
-                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "center" }}>{cat.totalQty}</td>
+                          <tr style={{ background: "#f1f5f9", fontWeight: "bold", fontSize: "12px" }}>
+                            <td colSpan={4} style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "right", fontWeight: "900" }}>إجمالي قسم / فئة ({cat.categoryName})</td>
+                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "center", fontWeight: "900" }}>{cat.totalQty}</td>
                             <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "center" }}>{cat.orderCount}</td>
-                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "left" }}>{fmt(cat.totalRevenue)} {currency}</td>
-                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "left", color: "#16a34a" }}>
+                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "left", fontWeight: "900" }}>{fmt(cat.totalRevenue)} {currency}</td>
+                            <td style={{ border: "1px solid #cbd5e1", padding: "6px", textAlign: "left", color: "#16a34a", fontWeight: "900" }}>
                               {fmt((items || []).reduce((s: number, it: any) => s + (it.totalProfit || 0), 0))} {currency}
                             </td>
                           </tr>
@@ -547,12 +698,12 @@ export default function Reports() {
 
                 {/* Grand Total Footer for Category Report */}
                 {categoryRows.length > 0 && (
-                  <div style={{ background: "#0f172a", color: "#ffffff", padding: "12px 16px", borderRadius: "6px", border: "2px solid #000", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: "15px", marginTop: "10px" }}>
+                  <div style={{ background: "#ffffff", color: "#000", padding: "12px 16px", borderRadius: "6px", border: "2px solid #000", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "900", fontSize: "15px", marginTop: "10px" }}>
                     <span>🏆 إجمالي المبيعات الكلي (جميع الفئات والأقسام)</span>
                     <div style={{ display: "flex", gap: "16px" }}>
                       <span>الفواتير: {categoryTotalOrders}</span>
                       <span>الكمية: {categoryTotalQty}</span>
-                      <span style={{ color: "#fbbf24", fontSize: "16px" }}>المبلغ الكلي: {fmt(categoryTotalRevenue)} {currency}</span>
+                      <span style={{ fontSize: "16px", fontWeight: "900" }}>المبلغ الكلي: {fmt(categoryTotalRevenue)} {currency}</span>
                     </div>
                   </div>
                 )}
@@ -1065,14 +1216,21 @@ export default function Reports() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {cashierRows.map((r: any, i) => (
-                      <tr key={i} className="hover:bg-muted/30">
-                        <td className="p-3 font-semibold flex items-center gap-2">
+                      <tr key={i} className="hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => { setSelectedCashier(r); setCashierOrdersModalOpen(true); }}>
+                        <td className="p-3 font-semibold flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">{r.userName?.charAt(0)}</div>
                           <div>
-                            <div>{r.userName}</div>
+                            <div className="font-bold text-slate-900 hover:text-primary transition-colors">{r.userName}</div>
+                            <div className="text-xs text-muted-foreground">{r.orders || 0} فاتورة مسجلة (انقر لعرض الفواتير)</div>
                           </div>
                         </td>
-                        <td className="p-3 text-left font-bold text-emerald-600">{fmt(r.total)}</td>
+                        <td className="p-3 text-left font-bold text-emerald-600 flex items-center justify-end gap-3">
+                          <span>{fmt(r.total)} {currency}</span>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={(e) => { e.stopPropagation(); setSelectedCashier(r); setCashierOrdersModalOpen(true); }}>
+                            <Eye className="w-3.5 h-3.5" />
+                            عرض الفواتير
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                     {cashierRows.length === 0 && <tr><td colSpan={2} className="py-10 text-center text-muted-foreground">لا توجد بيانات</td></tr>}
@@ -1155,6 +1313,27 @@ export default function Reports() {
               <div className="text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
                 الفترة من <span className="text-amber-300 font-mono font-bold">{startDate}</span> إلى <span className="text-amber-300 font-mono font-bold">{endDate}</span>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Card className="border border-emerald-200 bg-emerald-50/40">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground font-bold">إجمالي المبلغ الكلي النقدي (بدون المرتجعات والفواتير الأجل)</p>
+                    <p className="text-xl font-black text-emerald-700 mt-1">{fmt(productTotalCashRevenue)} <span className="text-xs">{currency}</span></p>
+                  </div>
+                  <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-xl font-bold">💵</div>
+                </CardContent>
+              </Card>
+              <Card className="border border-slate-200 bg-slate-50/40">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground font-bold">الإجمالي الكلي (مع كل شيء - نقدي، شبكة، آجل)</p>
+                    <p className="text-xl font-black text-slate-900 mt-1">{fmt(productTotalRevenue)} <span className="text-xs">{currency}</span></p>
+                  </div>
+                  <div className="p-2.5 bg-blue-500/10 text-blue-600 rounded-xl font-bold">📊</div>
+                </CardContent>
+              </Card>
             </div>
 
             <Card>
@@ -1807,6 +1986,96 @@ export default function Reports() {
         htmlContent={viewerHtml}
         title={viewerTitle}
       />
+
+      {/* Cashier Orders Modal */}
+      <Dialog open={cashierOrdersModalOpen} onOpenChange={setCashierOrdersModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center justify-between">
+              <span>📋 مبيعات الكاشير: <span className="text-primary">{selectedCashier?.userName}</span></span>
+              <span className="text-xs font-normal bg-slate-100 px-3 py-1 rounded-md">
+                الفترة: {startDate} إلى {endDate}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div className="bg-slate-50 p-3 rounded-lg border flex justify-between items-center text-sm font-bold">
+              <span>إجمالي فواتير الكاشير: {cashierOrders.length} فاتورة</span>
+              <span className="text-emerald-700">إجمالي المبيعات: {fmt(cashierOrders.reduce((s: number, o: any) => s + Number(o.total || 0), 0))} {currency}</span>
+            </div>
+
+            {isCashierOrdersLoading ? (
+              <div className="py-12 text-center text-muted-foreground">جاري تحميل فواتير الكاشير...</div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-slate-100 border-b font-bold text-slate-800">
+                    <tr>
+                      <th className="p-3 border-l">رقم الفاتورة</th>
+                      <th className="p-3 border-l text-center">نوع الطلب</th>
+                      <th className="p-3 border-l">العميل</th>
+                      <th className="p-3 border-l text-center">طريقة الدفع</th>
+                      <th className="p-3 border-l text-center">التاريخ والوقت</th>
+                      <th className="p-3 border-l text-left">المبلغ ({currency})</th>
+                      <th className="p-3 text-center">معاينة مفصلة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {cashierOrders.map((ord: any, idx: number) => (
+                      <tr key={ord.id || idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-mono font-bold text-blue-600 border-l">#{ord.invoiceNumber || ord.id}</td>
+                        <td className="p-3 text-center border-l text-xs">
+                          <span className="px-2 py-0.5 bg-slate-100 rounded font-semibold">
+                            {ord.orderType === "dine-in" ? "محلي" : ord.orderType === "takeout" ? "سفري" : ord.orderType === "delivery" ? "توصيل" : (ord.orderType || "عادي")}
+                          </span>
+                        </td>
+                        <td className="p-3 border-l">{ord.customerName || "عميل نقدي"}</td>
+                        <td className="p-3 text-center border-l">
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs font-bold">
+                            {ord.paymentMethod === "cash" ? "نقداً" : ord.paymentMethod === "card" ? "شبكة" : ord.paymentMethod === "credit" ? "آجل" : (ord.paymentMethod || "نقداً")}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center font-mono text-xs border-l text-muted-foreground">{ord.createdAt?.replace("T", " ").slice(0, 19)}</td>
+                        <td className="p-3 text-left font-bold font-mono text-emerald-700 border-l">{fmt(ord.total)}</td>
+                        <td className="p-3 text-center">
+                          <Button size="sm" variant="default" className="h-7 text-xs gap-1 bg-primary text-white" onClick={() => { setSelectedOrderForPreview(ord); setOrderPreviewModalOpen(true); }}>
+                            <Eye className="w-3.5 h-3.5" />
+                            معاينة الفاتورة
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {cashierOrders.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-muted-foreground">لا توجد مبيعات مسجلة لهذا الكاشير في هذه الفترة</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detailed Order Preview Modal */}
+      <Dialog open={orderPreviewModalOpen} onOpenChange={setOrderPreviewModalOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-center">معاينة محتوى الفاتورة التفصيلي</DialogTitle>
+          </DialogHeader>
+          {selectedOrderForPreview && (
+            <div className="bg-white p-2 rounded border shadow-inner">
+              <MasterReceiptSlip order={selectedOrderForPreview} settings={settings} cashierName={selectedCashier?.userName} />
+              <div className="mt-4 flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => window.print()}>طباعة الفاتورة</Button>
+                <Button size="sm" onClick={() => setOrderPreviewModalOpen(false)}>إغلاق</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

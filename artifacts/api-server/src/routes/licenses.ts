@@ -6,6 +6,71 @@ import zlib from "node:zlib";
 import os from "node:os";
 
 const router = Router();
+
+// Defensive schema migration to guarantee older databases always have new columns
+export function ensureLicenseSchema() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS licenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        license_key TEXT UNIQUE NOT NULL,
+        client_name TEXT NOT NULL,
+        devices_limit INTEGER NOT NULL DEFAULT 1,
+        expires_at TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        status TEXT DEFAULT 'active',
+        target_version TEXT DEFAULT '2.0.0',
+        license_type TEXT DEFAULT 'desktop',
+        notes TEXT,
+        device_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+      );
+    `);
+
+    const cols = (db.prepare("PRAGMA table_info(licenses)").all() as Array<{ name: string }>) || [];
+    const hasCol = (name: string) => cols.some(c => c.name.toLowerCase() === name.toLowerCase());
+
+    if (!hasCol("devices_limit")) db.exec("ALTER TABLE licenses ADD COLUMN devices_limit INTEGER DEFAULT 1");
+    if (!hasCol("status")) db.exec("ALTER TABLE licenses ADD COLUMN status TEXT DEFAULT 'active'");
+    if (!hasCol("target_version")) db.exec("ALTER TABLE licenses ADD COLUMN target_version TEXT DEFAULT '2.0.0'");
+    if (!hasCol("license_type")) db.exec("ALTER TABLE licenses ADD COLUMN license_type TEXT DEFAULT 'desktop'");
+    if (!hasCol("notes")) db.exec("ALTER TABLE licenses ADD COLUMN notes TEXT DEFAULT ''");
+    if (!hasCol("device_id")) db.exec("ALTER TABLE licenses ADD COLUMN device_id TEXT DEFAULT ''");
+    if (!hasCol("client_name")) db.exec("ALTER TABLE licenses ADD COLUMN client_name TEXT DEFAULT 'مؤسسة أومني سيستم للتجارة والمبيعات'");
+    if (!hasCol("active")) db.exec("ALTER TABLE licenses ADD COLUMN active INTEGER DEFAULT 1");
+    if (!hasCol("expires_at")) db.exec("ALTER TABLE licenses ADD COLUMN expires_at TEXT DEFAULT '2027-12-31'");
+    if (!hasCol("created_at")) db.exec("ALTER TABLE licenses ADD COLUMN created_at TEXT DEFAULT (datetime('now', 'localtime'))");
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS license_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        license_id INTEGER REFERENCES licenses(id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL,
+        device_name TEXT,
+        authorized_by TEXT DEFAULT 'مطور النظام',
+        status TEXT DEFAULT 'authorized',
+        registered_at TEXT,
+        last_active TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        UNIQUE(license_id, device_id)
+      );
+    `);
+
+    const devCols = (db.prepare("PRAGMA table_info(license_devices)").all() as Array<{ name: string }>) || [];
+    const hasDevCol = (name: string) => devCols.some(c => c.name.toLowerCase() === name.toLowerCase());
+
+    if (!hasDevCol("device_name")) db.exec("ALTER TABLE license_devices ADD COLUMN device_name TEXT");
+    if (!hasDevCol("authorized_by")) db.exec("ALTER TABLE license_devices ADD COLUMN authorized_by TEXT DEFAULT 'مطور النظام'");
+    if (!hasDevCol("status")) db.exec("ALTER TABLE license_devices ADD COLUMN status TEXT DEFAULT 'authorized'");
+    if (!hasDevCol("registered_at")) db.exec("ALTER TABLE license_devices ADD COLUMN registered_at TEXT");
+    if (!hasDevCol("last_active")) db.exec("ALTER TABLE license_devices ADD COLUMN last_active TEXT DEFAULT (datetime('now', 'localtime'))");
+  } catch (err) {
+    console.error("ensureLicenseSchema migration notice:", err);
+  }
+}
+
+// Run schema migration on module load
+ensureLicenseSchema();
+
 const DEV_SIGNING_SALT = "OMNIFLY-PRO-ENTERPRISE-DEVELOPER-SECRET-KEY-2027";
 const AES_KEY = crypto.createHash("sha256").update(DEV_SIGNING_SALT).digest();
 
@@ -258,66 +323,89 @@ router.get("/licenses", (req, res) => {
 // Developer: Issue new license
 router.post("/licenses", (req, res) => {
   if (!requireDeveloper(req, res)) return;
-  const user = getAuthUser(req);
-  const userId = user?.id ?? 1;
-  const userName = user?.name ?? "مطور النظام";
-  const { client_name, devices_limit, expires_at, target_version, license_type, device_id, notes } = req.body;
-  const licType = license_type === "desktop" ? "desktop" : "cloud";
-  const resolvedClient = (client_name && String(client_name).trim()) ? String(client_name).trim() : "مؤسسة أومني سيستم للتجارة والمبيعات";
-  const resolvedLimit = Math.max(1, Number(devices_limit) || (licType === "cloud" ? 999 : 5));
-  const resolvedExp = (expires_at && String(expires_at).trim()) ? String(expires_at).trim() : "2027-12-31";
-  const version = target_version || CURRENT_SYSTEM_VERSION;
-  const sysDev = getSystemDeviceId();
-  const targetHwid = device_id ? String(device_id).trim().toUpperCase() : (licType === "cloud" ? "*" : sysDev);
-
-  const licenseKey = encryptLicenseToken({
-    hwid: targetHwid,
-    client: resolvedClient,
-    exp: resolvedExp,
-    limit: resolvedLimit,
-    type: licType,
-    ver: version,
-    notes: notes || ""
-  });
-  
-  const r = db.prepare(`
-    INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes) 
-    VALUES (?,?,?,?,1,'active',?,?,?)
-  `).run(licenseKey, resolvedClient, resolvedLimit, resolvedExp, version, licType, notes ?? "");
-
-  const newLicenseId = Number(r.lastInsertRowid);
-
-  // Automatically authorize current system device and any provided device_id
-  const devsToAuth = Array.from(new Set([sysDev, ...getSystemCandidateDeviceIds(), device_id ? String(device_id).trim().toUpperCase() : ""].filter(d => d && d !== "*")));
-  for (const devId of devsToAuth) {
-    try {
-      db.prepare(`
-        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, ?, 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(newLicenseId, devId, `جهاز معتمد (${os.hostname()})`, `المطور: ${userName}`);
-    } catch {}
-  }
-
   try {
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('businessName', ?)").run(resolvedClient);
-  } catch {}
+    ensureLicenseSchema();
+    const user = getAuthUser(req);
+    const userId = user?.id ?? 1;
+    const userName = user?.name ?? "مطور النظام";
+    const { client_name, devices_limit, expires_at, target_version, license_type, device_id, notes } = req.body;
+    const licType = license_type === "desktop" ? "desktop" : "cloud";
+    const resolvedClient = (client_name && String(client_name).trim()) ? String(client_name).trim() : "مؤسسة أومني سيستم للتجارة والمبيعات";
+    const resolvedLimit = Math.max(1, Number(devices_limit) || (licType === "cloud" ? 999 : 5));
+    const resolvedExp = (expires_at && String(expires_at).trim()) ? String(expires_at).trim() : "2027-12-31";
+    const version = target_version || CURRENT_SYSTEM_VERSION;
+    const sysDev = getSystemDeviceId();
+    const targetHwid = device_id ? String(device_id).trim().toUpperCase() : (licType === "cloud" ? "*" : sysDev);
 
-  logAudit(userId, userName, "إصدار ترخيص", `ترخيص ${licType === "cloud" ? "سحابي شامل" : "أجهزة مكتبية"} لـ ${resolvedClient} برقم ${licenseKey} (إصدار: ${version})`);
-  
-  const devices = db.prepare("SELECT * FROM license_devices WHERE license_id=? ORDER BY id DESC").all(newLicenseId);
-  res.status(201).json({ 
-    id: newLicenseId, 
-    license_key: licenseKey, 
-    client_name: resolvedClient, 
-    devices_limit: resolvedLimit, 
-    expires_at: resolvedExp, 
-    active: 1, 
-    status: "active",
-    target_version: version,
-    license_type: licType,
-    notes: notes ?? "",
-    devices
-  });
+    const licenseKey = encryptLicenseToken({
+      hwid: targetHwid,
+      client: resolvedClient,
+      exp: resolvedExp,
+      limit: resolvedLimit,
+      type: licType,
+      ver: version,
+      notes: notes || ""
+    });
+    
+    let newLicenseId: number;
+    const existingLic = db.prepare("SELECT id FROM licenses WHERE license_key=?").get(licenseKey) as any;
+    if (existingLic) {
+      db.prepare(`
+        UPDATE licenses 
+        SET client_name=?, devices_limit=?, expires_at=?, active=1, status='active', target_version=?, license_type=?, notes=?
+        WHERE id=?
+      `).run(resolvedClient, resolvedLimit, resolvedExp, version, licType, notes ?? "", existingLic.id);
+      newLicenseId = existingLic.id;
+    } else {
+      const r = db.prepare(`
+        INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes) 
+        VALUES (?,?,?,?,1,'active',?,?,?)
+      `).run(licenseKey, resolvedClient, resolvedLimit, resolvedExp, version, licType, notes ?? "");
+      newLicenseId = Number(r.lastInsertRowid);
+    }
+
+    // Automatically authorize current system device and any provided device_id
+    const devsToAuth = Array.from(new Set([sysDev, ...getSystemCandidateDeviceIds(), device_id ? String(device_id).trim().toUpperCase() : ""].filter(d => d && d !== "*")));
+    for (const devId of devsToAuth) {
+      try {
+        const existingDev = db.prepare("SELECT id FROM license_devices WHERE license_id=? AND device_id=?").get(newLicenseId, devId) as any;
+        if (existingDev) {
+          db.prepare(`UPDATE license_devices SET status='authorized', last_active=datetime('now', 'localtime') WHERE id=?`).run(existingDev.id);
+        } else {
+          db.prepare(`
+            INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
+            VALUES (?, ?, ?, ?, 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+          `).run(newLicenseId, devId, `جهاز معتمد (${os.hostname()})`, `المطور: ${userName}`);
+        }
+      } catch (devErr) {
+        console.warn("Could not authorize device:", devId, devErr);
+      }
+    }
+
+    try {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('businessName', ?)").run(resolvedClient);
+    } catch {}
+
+    logAudit(userId, userName, "إصدار ترخيص", `ترخيص ${licType === "cloud" ? "سحابي شامل" : "أجهزة مكتبية"} لـ ${resolvedClient} برقم ${licenseKey} (إصدار: ${version})`);
+    
+    const devices = db.prepare("SELECT * FROM license_devices WHERE license_id=? ORDER BY id DESC").all(newLicenseId);
+    res.status(201).json({ 
+      id: newLicenseId, 
+      license_key: licenseKey, 
+      client_name: resolvedClient, 
+      devices_limit: resolvedLimit, 
+      expires_at: resolvedExp, 
+      active: 1, 
+      status: "active",
+      target_version: version,
+      license_type: licType,
+      notes: notes ?? "",
+      devices 
+    });
+  } catch (err: any) {
+    console.error("Failed to issue license:", err);
+    res.status(500).json({ error: "فشل إصدار الترخيص: " + (err?.message || "خطأ غير متوقع") });
+  }
 });
 
 // Developer: Quick Remote Cloud License Activation / Extension (1-Click Remote Cloud Activation)
@@ -503,25 +591,44 @@ router.post("/licenses/generate-code", (req, res) => {
   // If auto_save requested or by default, register in licenses table so both offline signature and online key work
   let savedLicenseId: number | undefined;
   if (auto_save !== false) {
-    const r = db.prepare(`
-      INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes)
-      VALUES (?, ?, ?, ?, 1, 'active', ?, ?, ?)
-    `).run(code, cleanClient, Math.max(cleanLimit, 2), finalExpiresAt, version, cleanType, notes || `تم إصدار كود تفعيل لبصمة (${cleanDevice})`);
-    
-    savedLicenseId = Number(r.lastInsertRowid);
-
-    // Pre-authorize both the target device and the current system's device IDs so the developer's PC is never locked out
-    const devsToAuth = Array.from(new Set([cleanDevice, getSystemDeviceId(), ...getSystemCandidateDeviceIds()].filter(d => d && d !== "*")));
-    for (const devId of devsToAuth) {
-      try {
+    try {
+      ensureLicenseSchema();
+      const existingLic = db.prepare("SELECT id FROM licenses WHERE license_key=?").get(code) as any;
+      if (existingLic) {
         db.prepare(`
-          INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-          VALUES (?, ?, ?, ?, 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-        `).run(savedLicenseId, devId, devId === cleanDevice ? `جهاز (${cleanClient})` : `جهاز النظام الأساسي (${os.hostname()})`, `المطور: ${user.name}`);
-      } catch (e) {}
-    }
+          UPDATE licenses
+          SET client_name=?, devices_limit=?, expires_at=?, active=1, status='active', target_version=?, license_type=?, notes=?
+          WHERE id=?
+        `).run(cleanClient, Math.max(cleanLimit, 2), finalExpiresAt, version, cleanType, notes || `تم تحديث كود تفعيل لبصمة (${cleanDevice})`, existingLic.id);
+        savedLicenseId = existingLic.id;
+      } else {
+        const r = db.prepare(`
+          INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes)
+          VALUES (?, ?, ?, ?, 1, 'active', ?, ?, ?)
+        `).run(code, cleanClient, Math.max(cleanLimit, 2), finalExpiresAt, version, cleanType, notes || `تم إصدار كود تفعيل لبصمة (${cleanDevice})`);
+        savedLicenseId = Number(r.lastInsertRowid);
+      }
+      
+      // Pre-authorize both the target device and the current system's device IDs so the developer's PC is never locked out
+      const devsToAuth = Array.from(new Set([cleanDevice, getSystemDeviceId(), ...getSystemCandidateDeviceIds()].filter(d => d && d !== "*")));
+      for (const devId of devsToAuth) {
+        try {
+          const existingDev = db.prepare("SELECT id FROM license_devices WHERE license_id=? AND device_id=?").get(savedLicenseId, devId) as any;
+          if (existingDev) {
+            db.prepare(`UPDATE license_devices SET status='authorized', last_active=datetime('now', 'localtime') WHERE id=?`).run(existingDev.id);
+          } else {
+            db.prepare(`
+              INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
+              VALUES (?, ?, ?, ?, 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+            `).run(savedLicenseId, devId, devId === cleanDevice ? `جهاز (${cleanClient})` : `جهاز النظام الأساسي (${os.hostname()})`, `المطور: ${user.name}`);
+          }
+        } catch (e) {}
+      }
 
-    logAudit(user.id, user.name, "توليد كود ترخيص", `تم توليد كود ترخيص لـ (${cleanClient}) على البصمة (${cleanDevice}) حتى (${finalExpiresAt})`);
+      logAudit(user.id, user.name, "توليد كود ترخيص", `تم توليد كود ترخيص لـ (${cleanClient}) على البصمة (${cleanDevice}) حتى (${finalExpiresAt})`);
+    } catch (saveErr) {
+      console.error("Error auto-saving license code:", saveErr);
+    }
   }
 
   const shareText = `📋 *بيانات تفعيل وترخيص نظام Omni System Pro ERP:*\n` +

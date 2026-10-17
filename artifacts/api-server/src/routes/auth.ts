@@ -89,28 +89,36 @@ export interface LicenseStatusResult {
   activeDevicesCount?: number;
 }
 
+function ensureLicenseSchemaInAuth() {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(licenses)").all() as Array<{ name: string }>) || [];
+    const hasCol = (name: string) => cols.some(c => c.name.toLowerCase() === name.toLowerCase());
+
+    if (!hasCol("devices_limit")) db.exec("ALTER TABLE licenses ADD COLUMN devices_limit INTEGER DEFAULT 1");
+    if (!hasCol("status")) db.exec("ALTER TABLE licenses ADD COLUMN status TEXT DEFAULT 'active'");
+    if (!hasCol("target_version")) db.exec("ALTER TABLE licenses ADD COLUMN target_version TEXT DEFAULT '2.0.0'");
+    if (!hasCol("license_type")) db.exec("ALTER TABLE licenses ADD COLUMN license_type TEXT DEFAULT 'desktop'");
+    if (!hasCol("notes")) db.exec("ALTER TABLE licenses ADD COLUMN notes TEXT DEFAULT ''");
+    if (!hasCol("device_id")) db.exec("ALTER TABLE licenses ADD COLUMN device_id TEXT DEFAULT ''");
+    if (!hasCol("client_name")) db.exec("ALTER TABLE licenses ADD COLUMN client_name TEXT DEFAULT 'مؤسسة أومني سيستم للتجارة والمبيعات'");
+
+    const devCols = (db.prepare("PRAGMA table_info(license_devices)").all() as Array<{ name: string }>) || [];
+    const hasDevCol = (name: string) => devCols.some(c => c.name.toLowerCase() === name.toLowerCase());
+
+    if (!hasDevCol("device_name")) db.exec("ALTER TABLE license_devices ADD COLUMN device_name TEXT");
+    if (!hasDevCol("authorized_by")) db.exec("ALTER TABLE license_devices ADD COLUMN authorized_by TEXT DEFAULT 'مطور النظام'");
+    if (!hasDevCol("status")) db.exec("ALTER TABLE license_devices ADD COLUMN status TEXT DEFAULT 'authorized'");
+    if (!hasDevCol("registered_at")) db.exec("ALTER TABLE license_devices ADD COLUMN registered_at TEXT");
+    if (!hasDevCol("last_active")) db.exec("ALTER TABLE license_devices ADD COLUMN last_active TEXT DEFAULT (datetime('now', 'localtime'))");
+  } catch {}
+}
+
 export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
   try {
+    ensureLicenseSchemaInAuth();
     const sysDevs = getSystemCandidateDeviceIds();
     const currentDevice = (deviceId ? String(deviceId).trim().toUpperCase() : sysDevs[0]) || sysDevs[0];
     const candidateDevs = Array.from(new Set([currentDevice, ...sysDevs].filter(Boolean)));
-
-    let totalLicensesCount = (db.prepare("SELECT COUNT(*) as c FROM licenses").get() as { c: number })?.c || 0;
-    if (totalLicensesCount === 0) {
-      try {
-        const licKey = "OMNI-CLOUD-MASTER-2026-9999";
-        db.prepare(`
-          INSERT INTO licenses (
-            license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes
-          ) VALUES (
-            ?, 'شركة ومطاعم أومني العالمية', 999, '2035-12-31', 1, 'active', '*', 'cloud', 'ترخيص سحابي شامل'
-          )
-        `).run(licKey);
-        totalLicensesCount = 1;
-      } catch (e) {
-        console.error("Auto license init error:", e);
-      }
-    }
 
     const activeLicenses = db.prepare("SELECT * FROM licenses WHERE active=1 AND (status IS NULL OR status='active') ORDER BY id DESC").all() as any[];
     if (!activeLicenses || activeLicenses.length === 0) {
@@ -119,19 +127,34 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         code: "license_suspended",
         deviceId: currentDevice,
         currentVersion: CURRENT_SYSTEM_VERSION,
-        reason: "تم إيقاف أو تعليق ترخيص النظام من قبل المطور. يرجى التواصل مع مطور النظام لتفعيل الترخيص."
+        reason: "تم إلغاء أو تعليق ترخيص النظام، أو لا يوجد ترخيص نشط لهذا الجهاز. يرجى التواصل مع مطور النظام لتفعيل وترخيص الاستخدام."
       };
     }
 
-    // Pick the best active license for this machine (prefer one that explicitly authorizes this device or is cloud)
-    let lic = activeLicenses[0];
-    for (const candidateLic of activeLicenses) {
-      const expObj = new Date(candidateLic.expires_at);
-      const nowObj = new Date();
-      expObj.setHours(0, 0, 0, 0);
-      nowObj.setHours(0, 0, 0, 0);
-      if (expObj.getTime() < nowObj.getTime()) continue;
+    // Filter unexpired licenses
+    const validUnexpired = activeLicenses.filter(candidateLic => {
+      if (!candidateLic.expires_at) return false;
+      const expDateObj = new Date(`${candidateLic.expires_at}T23:59:59`);
+      return !isNaN(expDateObj.getTime()) && expDateObj.getTime() >= Date.now();
+    });
 
+    if (validUnexpired.length === 0) {
+      const expiredLic = activeLicenses[0];
+      return {
+        blocked: true,
+        code: "license_expired",
+        deviceId: currentDevice,
+        clientName: expiredLic?.client_name,
+        expiresAt: expiredLic?.expires_at,
+        licenseType: expiredLic?.license_type || "cloud",
+        currentVersion: CURRENT_SYSTEM_VERSION,
+        reason: `انتهت فترة صلاحية ترخيص النظام الممنوحة لهذا العميل (${expiredLic?.expires_at}). يرجى التواصل مع المطور لتجديد وتمديد الترخيص.`
+      };
+    }
+
+    // Pick the best active unexpired license for this machine (prefer one that explicitly authorizes this device or is cloud)
+    let lic = validUnexpired[0];
+    for (const candidateLic of validUnexpired) {
       const isCloud = !candidateLic.license_type || candidateLic.license_type === "cloud" || candidateLic.license_type === "سحابي";
       if (isCloud) {
         lic = candidateLic;
@@ -145,17 +168,13 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
       }
     }
 
-    const expireDate = new Date(lic.expires_at);
+    const expireDate = new Date(`${lic.expires_at}T23:59:59`);
     const currentDate = new Date();
     
-    // Set both to midnight to count full days
-    expireDate.setHours(0, 0, 0, 0);
-    currentDate.setHours(0, 0, 0, 0);
-
     const diffTime = expireDate.getTime() - currentDate.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-    if (diffDays < 0) {
+    if (diffTime < 0) {
       return { 
         blocked: true, 
         code: "license_expired",
@@ -164,7 +183,7 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         expiresAt: lic.expires_at,
         licenseType: lic.license_type || "cloud",
         currentVersion: CURRENT_SYSTEM_VERSION,
-        reason: `انتهت فترة صلاحية ترخيص النظام الممنوحة لهذا العميل (${lic.expires_at}). يرجى التواصل مع المطور لتجديد وتمديد الترخيص السحابي.`
+        reason: `انتهت فترة صلاحية ترخيص النظام الممنوحة لهذا العميل (${lic.expires_at}). يرجى التواصل مع المطور لتجديد وتمديد الترخيص.`
       };
     }
 
@@ -213,17 +232,6 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
     const allLicenseDevices = db.prepare("SELECT * FROM license_devices WHERE license_id=?").all(lic.id) as any[];
     let deviceCheck = allLicenseDevices.find(d => candidateDevs.includes(String(d.device_id || "").trim().toUpperCase()) || d.device_id === "*");
 
-    // If a desktop license was just created with 0 bound devices and has available slots, auto-bind the local device
-    if (!deviceCheck && allLicenseDevices.length === 0 && (lic.devices_limit || 1) >= 1) {
-      try {
-        const ins = db.prepare(`
-          INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-          VALUES (?, ?, ?, 'ترخيص تلقائي للجهاز الأساسي', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-        `).run(lic.id, currentDevice, `جهاز أساسي (${os.hostname()})`);
-        deviceCheck = db.prepare("SELECT * FROM license_devices WHERE id=?").get(ins.lastInsertRowid);
-      } catch {}
-    }
-
     if (!deviceCheck) {
       return { 
         blocked: true, 
@@ -234,7 +242,7 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         expiresAt: lic.expires_at,
         remainingDays: diffDays,
         currentVersion: CURRENT_SYSTEM_VERSION,
-        reason: `هذا الجهاز (بصمة الجهاز: ${currentDevice}) غير مرخص له بتشغيل النظام. يُمنع منعاً باتاً تشغيل النظام عند نسخ ملفاته إلى جهاز آخر بدون ترخيص معتمد من المطور.`
+        reason: `هذا الجهاز (بصمة الجهاز: ${currentDevice}) غير مرخص له بتشغيل النظام. يُمنع منعاً باتاً تشغيل النظام على جهاز غير مرخص بدون ترخيص معتمد من المطور.`
       };
     }
 
@@ -501,7 +509,10 @@ router.post("/auth/login", (req, res) => {
   const isActive = toBool(user.active);
   if (!isActive || isSuspended) {
     res.status(403).json({ 
+      success: false,
+      accountSuspended: true,
       error: "هذا الحساب معطل أو موقوف إدارياً. يرجى مراجعة إدارة النظام", 
+      message: "هذا الحساب معطل أو موقوف إدارياً. يرجى مراجعة إدارة النظام", 
       code: "account_suspended" 
     });
     return;
@@ -512,7 +523,10 @@ router.post("/auth/login", (req, res) => {
       const grp = db.prepare("SELECT * FROM user_groups WHERE id=?").get(user.group_id) as any;
       if (grp && grp.is_suspended) {
         res.status(403).json({ 
+          success: false,
+          groupSuspended: true,
           error: `مجموعة المستخدمين (${grp.name_ar}) المرتبط بها هذا الحساب موقوفة حالياً. السبب: ${grp.suspended_reason || "إيقاف إداري"}`,
+          message: `مجموعة المستخدمين (${grp.name_ar}) المرتبط بها هذا الحساب موقوفة حالياً. السبب: ${grp.suspended_reason || "إيقاف إداري"}`,
           code: "group_suspended"
         });
         return;
@@ -525,11 +539,40 @@ router.post("/auth/login", (req, res) => {
   if (!isDevUser) {
     const licenseStatus = checkLicenseStatus();
     if (licenseStatus.blocked) {
+      const code = licenseStatus.code || "license_blocked";
+      let alertTitle = "تنبيه ترخيص استخدام النظام";
+      let alertType = "expired";
+      if (code === "license_expired") {
+        alertTitle = "تنبيه: انتهاء فترة ترخيص استخدام النظام";
+        alertType = "expired";
+      } else if (code === "license_suspended" || code === "no_active_license") {
+        alertTitle = "تنبيه: ترخيص استخدام النظام متوقف أو ملغي";
+        alertType = "expired";
+      } else if (code === "device_unauthorized" || code === "device_blocked" || code === "no_authorized_devices") {
+        alertTitle = "تحذير: هذا الجهاز غير مرخص لاستخدام النظام";
+        alertType = "unauthorized";
+      } else if (code === "version_upgrade_required") {
+        alertTitle = "تنبيه: يلزم ترخيص الإصدار الجديد للنظام";
+        alertType = "version_upgrade";
+      }
+
+      const alertMessage = licenseStatus.reason || "تم انتهاء فترة صلاحية ترخيص استخدام النظام أو أن هذا الجهاز غير مرخص للاستخدام. يرجى التواصل مع إدارة ومطور النظام لتفعيل وترخيص الاستخدام.";
+
       res.status(403).json({
-        error: licenseStatus.code || "license_blocked",
-        code: licenseStatus.code || "license_blocked",
+        success: false,
+        licenseBlocked: true,
+        isLicenseAlert: true,
+        code,
+        modalType: alertType,
+        title: alertTitle,
+        message: alertMessage,
+        error: alertMessage,
         deviceId: licenseStatus.deviceId,
-        message: licenseStatus.reason || "تم انتهاء فترة صلاحية ترخيص استخدام النظام أو أن هذا الجهاز غير مرخص. يرجى التواصل مع إدارة النظام والمطور."
+        clientName: licenseStatus.clientName,
+        expiresAt: licenseStatus.expiresAt,
+        licenseType: licenseStatus.licenseType,
+        targetVersion: licenseStatus.targetVersion,
+        currentVersion: licenseStatus.currentVersion
       });
       return;
     }
@@ -565,7 +608,9 @@ router.get("/auth/me", (req, res) => {
     const licenseStatus = checkLicenseStatus();
     if (licenseStatus.blocked) {
       res.status(403).json({
-        error: licenseStatus.code || "license_blocked",
+        licenseBlocked: true,
+        isLicenseAlert: true,
+        error: licenseStatus.reason || "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص.",
         code: licenseStatus.code || "license_blocked",
         message: licenseStatus.reason || "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص."
       });

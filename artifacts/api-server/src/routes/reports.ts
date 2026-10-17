@@ -225,8 +225,12 @@ router.get("/reports/by-product", (req, res) => {
            p_agg.grossProfit,
            p_agg.orderCount,
            p_agg.cost,
+           p_agg.cashRevenue,
+           p_agg.creditRevenue,
+           p_agg.cardRevenue,
            COALESCE(ret.returnedQty, 0) as returnedQty,
-           COALESCE(ret.returnedRevenue, 0) as returnedRevenue
+           COALESCE(ret.returnedRevenue, 0) as returnedRevenue,
+           COALESCE(ret.returnedCashRevenue, 0) as returnedCashRevenue
     FROM (
       SELECT COALESCE(p.id, oi.product_id) as productId,
              COALESCE(p.name, oi.product_name) as productName,
@@ -237,7 +241,10 @@ router.get("/reports/by-product", (req, res) => {
              SUM(oi.quantity) as grossQty,
              COALESCE(SUM(oi.total), 0) as grossRevenue,
              COALESCE(SUM((oi.unit_price - COALESCE(p.cost, 0)) * oi.quantity), 0) as grossProfit,
-             COUNT(DISTINCT oi.order_id) as orderCount
+             COUNT(DISTINCT oi.order_id) as orderCount,
+             COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN oi.total ELSE 0 END), 0) as cashRevenue,
+             COALESCE(SUM(CASE WHEN o.payment_method = 'credit' THEN oi.total ELSE 0 END), 0) as creditRevenue,
+             COALESCE(SUM(CASE WHEN o.payment_method = 'card' THEN oi.total ELSE 0 END), 0) as cardRevenue
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON (p.id = oi.product_id OR p.number = oi.product_id OR p.name = oi.product_name)
@@ -250,7 +257,8 @@ router.get("/reports/by-product", (req, res) => {
         COALESCE(p.id, ri.product_id) as pid,
         COALESCE(p.name, ri.product_name) as productName,
         SUM(ri.quantity) as returnedQty,
-        SUM(ri.total) as returnedRevenue
+        SUM(ri.total) as returnedRevenue,
+        COALESCE(SUM(CASE WHEN r.payment_method = 'cash' THEN ri.total ELSE 0 END), 0) as returnedCashRevenue
       FROM return_items ri
       JOIN returns r ON r.id = ri.return_id
       LEFT JOIN products p ON (p.id = ri.product_id OR p.number = ri.product_id OR p.name = ri.product_name)
@@ -271,11 +279,16 @@ router.get("/reports/by-product", (req, res) => {
     const netRevenue = Math.max(0, Number(r.grossRevenue || 0) - Number(r.returnedRevenue || 0));
     const unitCost = Number(r.cost || 0);
     const netProfit = Math.max(0, netRevenue - (netQty * unitCost));
+    const netCashRevenue = Math.max(0, Number(r.cashRevenue || 0) - Number(r.returnedCashRevenue || 0));
     return {
       ...r,
       totalQty: netQty,
       totalRevenue: netRevenue,
-      totalProfit: netProfit
+      totalProfit: netProfit,
+      netCashRevenue,
+      cashRevenue: Number(r.cashRevenue || 0),
+      creditRevenue: Number(r.creditRevenue || 0),
+      cardRevenue: Number(r.cardRevenue || 0)
     };
   });
 

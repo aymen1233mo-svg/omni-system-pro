@@ -894,4 +894,66 @@
   }
 }
 
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Slim modern scrollbar */
+.custom-slim-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-slim-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-slim-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+}
+.custom-slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+/* ─── Mobile Viewport & Touch Screen Optimizations ─── */
+@media (max-width: 768px) {
+  /* Prevent browser auto-zoom on input focus in iOS and Android */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Safe touch manipulation */
+  button, 
+  a, 
+  input[type="button"], 
+  input[type="submit"] {
+    touch-action: manipulation;
+  }
+
+  /* Better horizontal scroll for data tables and flex containers on mobile */
+  .table-responsive,
+  table {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Dialogs and modals safe padding on phone screens */
+  [role="dialog"] {
+    max-width: 95vw !important;
+    max-height: 92vh !important;
+  }
+}
+
+/* Safe area inset support */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0.5rem);
+}
 

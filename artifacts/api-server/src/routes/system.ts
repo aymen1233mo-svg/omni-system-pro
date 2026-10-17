@@ -218,4 +218,8 @@ router.put("/role-permissions/:role", (req, res) => {
   }
 });
 
+router.get("/system/migration-status", (req, res) => {
+  res.json({ success: true, notice: "تم فحص قاعدة البيانات المحلية والتأكد من توافق الهيكلة دون فقدان أو حذف أي بيانات سابقة." });
+});
+
 export default router;

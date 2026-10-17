@@ -52,6 +52,8 @@ function getSettingsObj() {
     // Receipt format
     receiptPaperSize: map["receiptPaperSize"] ?? "80mm",
     showOrderNumber: map["showOrderNumber"] ?? true,
+    showDailyOrderNumber: map["showDailyOrderNumber"] !== false,
+    showMainInvoiceNumber: map["showMainInvoiceNumber"] !== false,
     showTableNumber: map["showTableNumber"] ?? true,
     showDateTime: map["showDateTime"] ?? true,
     showBarcode: map["showBarcode"] ?? false,
@@ -60,6 +62,8 @@ function getSettingsObj() {
     showDiscount: map["showDiscount"] ?? true,
     showNotes: map["showNotes"] ?? true,
     // Print behavior
+    printMode: map["printMode"] ?? "browser",
+    autoSilentPrint: map["autoSilentPrint"] !== false,
     autoPrintTrigger: map["autoPrintTrigger"] ?? "print_button",
     maxReprintCount: map["maxReprintCount"] ?? 3,
     masterCopiesCount: map["masterCopiesCount"] ?? 1,

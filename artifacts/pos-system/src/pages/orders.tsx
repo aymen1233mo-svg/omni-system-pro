@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation, Link } from "wouter";
 import { Trash2, Eye, Search, RotateCcw, Printer, Maximize2, FileDown } from "lucide-react";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
-import { printA4Html } from "@/lib/printUtils";
+import { printA4Html, generateWarehouseInvoiceA4Html } from "@/lib/printUtils";
 
 export default function Orders() {
   const [startDate, setStartDate] = useState("");
@@ -26,53 +26,27 @@ export default function Orders() {
   const [reportTitle, setReportTitle] = useState("");
 
   const buildOrderHtml = (order: Order) => {
-    const itemsHtml = order.items?.map((item, idx) => `
-      <tr>
-        <td>${idx + 1}</td>
-        <td style="text-align: right; font-weight: bold;">${item.productName}</td>
-        <td>${item.quantity}</td>
-        <td style="font-family: monospace;">${item.price?.toFixed(2) || "0.00"}</td>
-        <td style="font-family: monospace; font-weight: bold;">${item.total.toFixed(2)} YER</td>
-      </tr>
-    `).join("");
-
-    return `
-      <div style="direction: rtl; font-family: Tajawal, sans-serif; padding: 25px; border: 1px solid #cbd5e1; border-radius: 8px;">
-        <div style="text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 15px;">
-          <h2 style="margin: 0; color: #0369a1;">فاتورة مبيعات نقاط البيع POS</h2>
-          <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">رقم الفاتورة: ${order.invoiceNumber}</p>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 6px;">
-          <div><strong>التاريخ والوقت:</strong> ${new Date(order.createdAt).toLocaleString("ar-SA")}</div>
-          <div><strong>الكاشير المسجل:</strong> ${order.userName || "النظام"}</div>
-          <div><strong>طريقة الدفع:</strong> ${pmLabel(order.paymentMethod)}</div>
-          <div><strong>العميل:</strong> ${order.customerName || "عميل نقدي عام"}</div>
-        </div>
-
-        <table>
-          <thead>
-            <tr style="background: #e0f2fe; color: #0369a1;">
-              <th>#</th>
-              <th style="text-align: right;">الصنف</th>
-              <th>الكمية</th>
-              <th>السعر</th>
-              <th>الإجمالي</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml || "<tr><td colspan='5'>لا توجد أصناف</td></tr>"}
-          </tbody>
-        </table>
-
-        <div style="margin-top: 15px; border-top: 2px solid #0284c7; padding-top: 10px; font-size: 13px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>المجموع الفرعي:</span><span style="font-mono">${(order.subtotal ?? 0).toFixed(2)} YER</span></div>
-          ${(order.discount ?? 0) > 0 ? `<div style="display: flex; justify-content: space-between; color: #dc2626; margin-bottom: 4px;"><span>الخصم:</span><span>-${(order.discount ?? 0).toFixed(2)} YER</span></div>` : ""}
-          ${(order.tax ?? 0) > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>الضريبة:</span><span>${(order.tax ?? 0).toFixed(2)} YER</span></div>` : ""}
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; color: #0284c7; border-top: 1px solid #e2e8f0; padding-top: 6px; margin-top: 6px;"><span>الإجمالي النهائي:</span><span>${order.total.toFixed(2)} YER</span></div>
-        </div>
-      </div>
-    `;
+    const formattedInvoice = {
+      invoice_number: order.invoiceNumber,
+      invoice_no: order.invoiceNumber,
+      invoice_date: order.createdAt ? String(order.createdAt).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      invoice_time: order.createdAt ? new Date(order.createdAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }) : "",
+      customer_name: order.customerName || "عميل نقدي عام",
+      payment_type: order.paymentMethod || "cash",
+      payment_method: order.paymentMethod || "cash",
+      subtotal: order.subtotal || order.total,
+      discount_amount: order.discount || 0,
+      tax_amount: order.tax || 0,
+      net_amount: order.total,
+      currency: "YER",
+      items: (order.items || []).map((it) => ({
+        product_name: it.productName,
+        quantity: it.quantity,
+        price: it.price,
+        total: it.total,
+      })),
+    };
+    return generateWarehouseInvoiceA4Html(formattedInvoice);
   };
 
   const handlePreviewOrder = (order: Order) => {
@@ -108,6 +82,19 @@ export default function Orders() {
     if (m === "credit" || m === "آجل") return "آجل (حساب/وجبة)";
     if (m === "split" || m === "mixed") return "مختلط";
     return m || "نقداً";
+  };
+
+  const statusBadge = (s?: string) => {
+    if (s === "returned") {
+      return <Badge className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 font-semibold">مرتجع بالكامل</Badge>;
+    }
+    if (s === "partially_returned") {
+      return <Badge className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 font-semibold">مرتجع جزئياً</Badge>;
+    }
+    if (s === "cancelled") {
+      return <Badge className="bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200">ملغاة</Badge>;
+    }
+    return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 font-medium">مكتملة</Badge>;
   };
 
   const getCustomerOrEmpName = (o: Order) => {
@@ -190,6 +177,7 @@ export default function Orders() {
                   <th className="text-right p-3 font-semibold">الكاشير</th>
                   <th className="text-right p-3 font-semibold">العميل / الموظف</th>
                   <th className="text-right p-3 font-semibold">طريقة الدفع</th>
+                  <th className="text-center p-3 font-semibold">الحالة</th>
                   <th className="text-left p-3 font-semibold">الإجمالي</th>
                   <th className="p-3"></th>
                 </tr>
@@ -202,6 +190,7 @@ export default function Orders() {
                     <td className="p-3">{order.userName}</td>
                     <td className="p-3 text-xs font-semibold">{getCustomerOrEmpName(order)}</td>
                     <td className="p-3"><Badge variant="outline">{pmLabel(order.paymentMethod)}</Badge></td>
+                    <td className="p-3 text-center">{statusBadge(order.status)}</td>
                     <td className="p-3 text-left font-bold text-amber-600">{order.total.toFixed(2)}</td>
                     <td className="p-3">
                       <div className="flex gap-1.5 justify-end items-center flex-wrap">
@@ -235,6 +224,7 @@ export default function Orders() {
                 <div><span className="font-medium text-foreground">التاريخ: </span>{new Date(viewOrder.createdAt).toLocaleString("ar-SA")}</div>
                 <div><span className="font-medium text-foreground">الكاشير: </span>{viewOrder.userName}</div>
                 <div><span className="font-medium text-foreground">طريقة الدفع: </span>{pmLabel(viewOrder.paymentMethod)}</div>
+                <div><span className="font-medium text-foreground">حالة الفاتورة: </span>{statusBadge(viewOrder.status)}</div>
                 {viewOrder.customerName && <div><span className="font-medium text-foreground">العميل: </span>{viewOrder.customerName}</div>}
               </div>
               <table className="w-full">

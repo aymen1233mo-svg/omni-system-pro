@@ -295,11 +295,11 @@ export function FlightBookingFullscreenDialog({
         {/* ======================================================== */}
         {/* 2. رأس الشاشة (HEADER & ACTION BAR)                      */}
         {/* ======================================================== */}
-        <header className="bg-slate-900 text-white border-b border-slate-800 px-5 py-3 shrink-0 shadow-md">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <header className="bg-slate-900 text-white border-b border-slate-800 px-3 sm:px-5 py-2.5 sm:py-3 shrink-0 shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             
             {/* Title & Primary Info */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
                 <Plane className="w-6 h-6" />
               </div>
@@ -462,7 +462,7 @@ export function FlightBookingFullscreenDialog({
         {/* ======================================================== */}
         {/* SCROLLABLE MAIN BODY                                     */}
         {/* ======================================================== */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 sm:space-y-5">
           
           <form onSubmit={handleSubmit} className="space-y-5">
             

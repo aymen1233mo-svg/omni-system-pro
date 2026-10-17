@@ -39,7 +39,11 @@ import {
   AlertOctagon,
   Plane,
   Building2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Package,
+  Tag,
+  UserCheck,
+  FileText
 } from "lucide-react";
 
 export default function BackupRestorePage() {
@@ -272,7 +276,7 @@ export default function BackupRestorePage() {
 
       const stats = data.statsMerged;
       const desc = stats 
-        ? `تم إضافة: ${stats.passengers || 0} مسافر، ${stats.customers || 0} عميل، ${stats.travelGroups || 0} مجموعة، ${stats.suppliers || 0} مورد.`
+        ? `تم استيعاب ودمج: ${stats.orders || 0} فاتورة، ${stats.products || 0} صنف، ${stats.customers || 0} عميل، ${stats.suppliers || 0} مورد، ${stats.vouchers || 0} سند، ${stats.journals || 0} قيد محاسبي.`
         : data.message;
 
       toast({ 
@@ -737,18 +741,18 @@ export default function BackupRestorePage() {
               <div className="space-y-2">
                 <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                   <ArrowRightLeft className="w-4 h-4 text-indigo-600" />
-                  مقارنة البيانات بين الملف المفحوص والقاعدة الحالية:
+                  مقارنة بيانات المبيعات والمخزون بين الملف المفحوص والقاعدة الحالية:
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {[
-                    { label: "المسافرين والمعتمرين", icon: Plane, incoming: inspectionData.statistics?.passengers, current: inspectionData.currentDatabaseStats?.passengers, color: "emerald" },
-                    { label: "المجموعات والرحلات", icon: Users, incoming: inspectionData.statistics?.travelGroups, current: inspectionData.currentDatabaseStats?.travelGroups, color: "sky" },
-                    { label: "العملاء المسجلين", icon: Users, incoming: inspectionData.statistics?.customers, current: inspectionData.currentDatabaseStats?.customers, color: "blue" },
-                    { label: "فواتير المبيعات", icon: Receipt, incoming: inspectionData.statistics?.orders, current: inspectionData.currentDatabaseStats?.orders, color: "purple" },
-                    { label: "سندات الصرف والقبض", icon: Receipt, incoming: inspectionData.statistics?.vouchers, current: inspectionData.currentDatabaseStats?.vouchers, color: "amber" },
-                    { label: "قيود اليومية العامة", icon: BookOpen, incoming: inspectionData.statistics?.journals, current: inspectionData.currentDatabaseStats?.journals, color: "indigo" },
-                    { label: "الموردين والشركات", icon: Building2, incoming: inspectionData.statistics?.suppliers, current: inspectionData.currentDatabaseStats?.suppliers, color: "teal" },
-                    { label: "الخدمات والمنتجات", icon: Layers, incoming: inspectionData.statistics?.products, current: inspectionData.currentDatabaseStats?.products, color: "rose" },
+                    { label: "فواتير ومبيعات النظام", icon: Receipt, incoming: inspectionData.statistics?.orders, current: inspectionData.currentDatabaseStats?.orders, color: "purple" },
+                    { label: "المنتجات والأصناف بالمخزون", icon: Package, incoming: inspectionData.statistics?.products, current: inspectionData.currentDatabaseStats?.products, color: "rose" },
+                    { label: "العملاء والحسابات المدينة", icon: Users, incoming: inspectionData.statistics?.customers, current: inspectionData.currentDatabaseStats?.customers, color: "blue" },
+                    { label: "الموردين والشركات المعتمدة", icon: Building2, incoming: inspectionData.statistics?.suppliers, current: inspectionData.currentDatabaseStats?.suppliers, color: "teal" },
+                    { label: "سندات الصرف والقبض", icon: FileText, incoming: inspectionData.statistics?.vouchers, current: inspectionData.currentDatabaseStats?.vouchers, color: "amber" },
+                    { label: "قيود اليومية العامة المحاسبية", icon: BookOpen, incoming: inspectionData.statistics?.journals, current: inspectionData.currentDatabaseStats?.journals, color: "indigo" },
+                    { label: "فئات وتصنيفات المنتجات", icon: Tag, incoming: inspectionData.statistics?.categories, current: inspectionData.currentDatabaseStats?.categories, color: "sky" },
+                    { label: "المستخدمين وصلاحيات الكاشير", icon: UserCheck, incoming: inspectionData.statistics?.users, current: inspectionData.currentDatabaseStats?.users, color: "emerald" },
                   ].map((stat, idx) => {
                     const Icon = stat.icon;
                     return (
@@ -777,50 +781,95 @@ export default function BackupRestorePage() {
               <div className="space-y-2">
                 <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                   <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-                  معاينة عينات حية من السجلات داخل الملف:
+                  معاينة عينات حية من سجلات المبيعات والمخزون والحسابات داخل الملف:
                 </h4>
 
-                <Tabs defaultValue="passengers" className="w-full">
-                  <TabsList className="bg-slate-100 p-1 rounded-xl h-auto flex flex-wrap">
-                    <TabsTrigger value="passengers" className="text-xs font-bold rounded-lg py-1.5">
-                      عينة المسافرين ({inspectionData.samples?.passengers?.length || 0})
+                <Tabs defaultValue="orders" className="w-full">
+                  <TabsList className="bg-slate-100 p-1 rounded-xl h-auto flex flex-wrap gap-1">
+                    <TabsTrigger value="orders" className="text-xs font-bold rounded-lg py-1.5">
+                      عينة الفواتير ({inspectionData.samples?.orders?.length || 0})
+                    </TabsTrigger>
+                    <TabsTrigger value="products" className="text-xs font-bold rounded-lg py-1.5">
+                      عينة المنتجات ({inspectionData.samples?.products?.length || 0})
                     </TabsTrigger>
                     <TabsTrigger value="customers" className="text-xs font-bold rounded-lg py-1.5">
                       عينة العملاء ({inspectionData.samples?.customers?.length || 0})
                     </TabsTrigger>
-                    <TabsTrigger value="orders" className="text-xs font-bold rounded-lg py-1.5">
-                      عينة الفواتير ({inspectionData.samples?.orders?.length || 0})
+                    <TabsTrigger value="suppliers" className="text-xs font-bold rounded-lg py-1.5">
+                      عينة الموردين ({inspectionData.samples?.suppliers?.length || 0})
                     </TabsTrigger>
                     <TabsTrigger value="vouchers" className="text-xs font-bold rounded-lg py-1.5">
                       عينة السندات ({inspectionData.samples?.vouchers?.length || 0})
                     </TabsTrigger>
+                    <TabsTrigger value="journals" className="text-xs font-bold rounded-lg py-1.5">
+                      عينة القيود ({inspectionData.samples?.journals?.length || 0})
+                    </TabsTrigger>
                   </TabsList>
 
-                  {/* Tab: Passengers Sample */}
-                  <TabsContent value="passengers" className="mt-2 border rounded-2xl overflow-hidden">
+                  {/* Tab: Orders Sample */}
+                  <TabsContent value="orders" className="mt-2 border rounded-2xl overflow-hidden">
                     <div className="max-h-52 overflow-y-auto">
                       <table className="w-full text-right text-xs">
                         <thead className="bg-slate-100 text-slate-700 font-bold border-b sticky top-0">
                           <tr>
-                            <th className="p-2.5">الاسم</th>
-                            <th className="p-2.5">رقم الجواز</th>
-                            <th className="p-2.5">تاريخ السفر</th>
-                            <th className="p-2.5">رقم التأشيرة</th>
-                            <th className="p-2.5">نوع الرحلة</th>
+                            <th className="p-2.5">رقم الفاتورة</th>
+                            <th className="p-2.5">العميل</th>
+                            <th className="p-2.5">الإجمالي</th>
+                            <th className="p-2.5">طريقة الدفع</th>
+                            <th className="p-2.5">الحالة</th>
+                            <th className="p-2.5">التاريخ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {inspectionData.samples?.passengers?.map((p: any) => (
-                            <tr key={p.id} className="hover:bg-slate-50">
-                              <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
-                              <td className="p-2.5 font-mono text-indigo-700 font-bold">{p.passport_number}</td>
-                              <td className="p-2.5 font-mono text-slate-600">{p.travel_date || "---"}</td>
-                              <td className="p-2.5 font-mono text-slate-600">{p.visa_number || "---"}</td>
-                              <td className="p-2.5">{p.trip_type || "بر"}</td>
+                          {inspectionData.samples?.orders?.map((o: any) => (
+                            <tr key={o.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-mono font-bold text-indigo-700">#{o.invoice_number || o.id}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{o.customer_name || "عميل عام"}</td>
+                              <td className="p-2.5 font-mono font-bold text-emerald-700">{o.total || 0} ريال</td>
+                              <td className="p-2.5">{o.payment_method === "cash" ? "نقداً" : (o.payment_method === "card" ? "شبكة" : "آجل")}</td>
+                              <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{o.status || "مكتملة"}</Badge></td>
+                              <td className="p-2.5 text-slate-500 font-mono text-[11px]">{o.created_at || "---"}</td>
                             </tr>
                           ))}
-                          {(!inspectionData.samples?.passengers || inspectionData.samples.passengers.length === 0) && (
-                            <tr><td colSpan={5} className="text-center py-4 text-slate-400">لا توجد سجلات مسافرين في هذا الملف</td></tr>
+                          {(!inspectionData.samples?.orders || inspectionData.samples.orders.length === 0) && (
+                            <tr><td colSpan={6} className="text-center py-4 text-slate-400">لا توجد فواتير مبيعات في هذا الملف</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </TabsContent>
+
+                  {/* Tab: Products Sample */}
+                  <TabsContent value="products" className="mt-2 border rounded-2xl overflow-hidden">
+                    <div className="max-h-52 overflow-y-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-100 text-slate-700 font-bold border-b sticky top-0">
+                          <tr>
+                            <th className="p-2.5">الباركود</th>
+                            <th className="p-2.5">اسم الصنف / المنتج</th>
+                            <th className="p-2.5">سعر البيع</th>
+                            <th className="p-2.5">سعر التكلفة</th>
+                            <th className="p-2.5">المخزون المتوفر</th>
+                            <th className="p-2.5">الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {inspectionData.samples?.products?.map((p: any) => (
+                            <tr key={p.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-mono text-indigo-700 font-bold">{p.barcode || "---"}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
+                              <td className="p-2.5 font-mono font-bold text-emerald-700">{p.price || 0} ريال</td>
+                              <td className="p-2.5 font-mono text-slate-600">{p.cost || 0} ريال</td>
+                              <td className="p-2.5 font-mono font-bold text-blue-700">{p.stock || 0}</td>
+                              <td className="p-2.5">
+                                <Badge variant="outline" className={p.active !== 0 ? "text-emerald-700 bg-emerald-50" : "text-slate-500"}>
+                                  {p.active !== 0 ? "نشط" : "موقف"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                          {(!inspectionData.samples?.products || inspectionData.samples.products.length === 0) && (
+                            <tr><td colSpan={6} className="text-center py-4 text-slate-400">لا توجد أصناف منتجات في هذا الملف</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -835,8 +884,9 @@ export default function BackupRestorePage() {
                           <tr>
                             <th className="p-2.5">اسم العميل</th>
                             <th className="p-2.5">الهاتف</th>
-                            <th className="p-2.5">الرصيد</th>
-                            <th className="p-2.5">النوع</th>
+                            <th className="p-2.5">الرصيد المالي</th>
+                            <th className="p-2.5">نوع العميل</th>
+                            <th className="p-2.5">العنوان</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -844,41 +894,42 @@ export default function BackupRestorePage() {
                             <tr key={c.id} className="hover:bg-slate-50">
                               <td className="p-2.5 font-bold text-slate-900">{c.name}</td>
                               <td className="p-2.5 font-mono text-slate-600">{c.phone || "---"}</td>
-                              <td className="p-2.5 font-mono font-bold text-emerald-700">{c.balance || 0}</td>
-                              <td className="p-2.5">{c.customer_type || "فردي"}</td>
+                              <td className="p-2.5 font-mono font-bold text-emerald-700">{c.balance || 0} ريال</td>
+                              <td className="p-2.5">{c.customer_type === "company" ? "مؤسسة/شركة" : "فردي"}</td>
+                              <td className="p-2.5 text-slate-600">{c.address || "---"}</td>
                             </tr>
                           ))}
                           {(!inspectionData.samples?.customers || inspectionData.samples.customers.length === 0) && (
-                            <tr><td colSpan={4} className="text-center py-4 text-slate-400">لا توجد سجلات عملاء</td></tr>
+                            <tr><td colSpan={5} className="text-center py-4 text-slate-400">لا توجد سجلات عملاء في هذا الملف</td></tr>
                           )}
                         </tbody>
                       </table>
                     </div>
                   </TabsContent>
 
-                  {/* Tab: Orders Sample */}
-                  <TabsContent value="orders" className="mt-2 border rounded-2xl overflow-hidden">
+                  {/* Tab: Suppliers Sample */}
+                  <TabsContent value="suppliers" className="mt-2 border rounded-2xl overflow-hidden">
                     <div className="max-h-52 overflow-y-auto">
                       <table className="w-full text-right text-xs">
                         <thead className="bg-slate-100 text-slate-700 font-bold border-b sticky top-0">
                           <tr>
-                            <th className="p-2.5">رقم الفاتورة</th>
-                            <th className="p-2.5">العميل</th>
-                            <th className="p-2.5">الإجمالي</th>
-                            <th className="p-2.5">التاريخ</th>
+                            <th className="p-2.5">اسم المورد / الشركة</th>
+                            <th className="p-2.5">الهاتف</th>
+                            <th className="p-2.5">الرصيد المستحق</th>
+                            <th className="p-2.5">العنوان / الملاحظات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {inspectionData.samples?.orders?.map((o: any) => (
-                            <tr key={o.id} className="hover:bg-slate-50">
-                              <td className="p-2.5 font-mono font-bold text-indigo-700">#{o.id}</td>
-                              <td className="p-2.5 font-bold text-slate-900">{o.customer_name || "عميل عام"}</td>
-                              <td className="p-2.5 font-mono font-bold text-emerald-700">{o.total || 0}</td>
-                              <td className="p-2.5 text-slate-500 font-mono">{o.created_at}</td>
+                          {inspectionData.samples?.suppliers?.map((s: any) => (
+                            <tr key={s.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-bold text-slate-900">{s.name}</td>
+                              <td className="p-2.5 font-mono text-slate-600">{s.phone || "---"}</td>
+                              <td className="p-2.5 font-mono font-bold text-amber-700">{s.balance || 0} ريال</td>
+                              <td className="p-2.5 text-slate-600">{s.address || "---"}</td>
                             </tr>
                           ))}
-                          {(!inspectionData.samples?.orders || inspectionData.samples.orders.length === 0) && (
-                            <tr><td colSpan={4} className="text-center py-4 text-slate-400">لا توجد فواتير</td></tr>
+                          {(!inspectionData.samples?.suppliers || inspectionData.samples.suppliers.length === 0) && (
+                            <tr><td colSpan={4} className="text-center py-4 text-slate-400">لا توجد سجلات موردين في هذا الملف</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -894,20 +945,55 @@ export default function BackupRestorePage() {
                             <th className="p-2.5">النوع</th>
                             <th className="p-2.5">المبلغ</th>
                             <th className="p-2.5">المستفيد / الحساب</th>
+                            <th className="p-2.5">طريقة الدفع</th>
                             <th className="p-2.5">التاريخ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {inspectionData.samples?.vouchers?.map((v: any) => (
                             <tr key={v.id} className="hover:bg-slate-50">
-                              <td className="p-2.5 font-bold">{v.type === "receipt" ? "قبض" : "صرف"}</td>
-                              <td className="p-2.5 font-mono font-bold text-indigo-700">{v.amount}</td>
+                              <td className="p-2.5 font-bold">
+                                <Badge className={v.type === "receipt" ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"}>
+                                  {v.type === "receipt" ? "سند قبض" : "سند صرف"}
+                                </Badge>
+                              </td>
+                              <td className="p-2.5 font-mono font-bold text-indigo-700">{v.amount} ريال</td>
                               <td className="p-2.5">{v.beneficiary || v.notes || "---"}</td>
-                              <td className="p-2.5 font-mono text-slate-500">{v.created_at}</td>
+                              <td className="p-2.5">{v.payment_method === "cash" ? "نقداً" : "تحويل/بنكي"}</td>
+                              <td className="p-2.5 font-mono text-slate-500">{v.created_at || "---"}</td>
                             </tr>
                           ))}
                           {(!inspectionData.samples?.vouchers || inspectionData.samples.vouchers.length === 0) && (
-                            <tr><td colSpan={4} className="text-center py-4 text-slate-400">لا توجد سندات</td></tr>
+                            <tr><td colSpan={5} className="text-center py-4 text-slate-400">لا توجد سندات مالية في هذا الملف</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </TabsContent>
+
+                  {/* Tab: Journals Sample */}
+                  <TabsContent value="journals" className="mt-2 border rounded-2xl overflow-hidden">
+                    <div className="max-h-52 overflow-y-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-100 text-slate-700 font-bold border-b sticky top-0">
+                          <tr>
+                            <th className="p-2.5">رقم القيد</th>
+                            <th className="p-2.5">التاريخ</th>
+                            <th className="p-2.5">البيان العام</th>
+                            <th className="p-2.5">إجمالي المدين</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {inspectionData.samples?.journals?.map((j: any) => (
+                            <tr key={j.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-mono font-bold text-indigo-700">#{j.entry_number || j.id}</td>
+                              <td className="p-2.5 font-mono text-slate-600">{j.date || "---"}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{j.description || "---"}</td>
+                              <td className="p-2.5 font-mono font-bold text-emerald-700">{j.total_debit || 0} ريال</td>
+                            </tr>
+                          ))}
+                          {(!inspectionData.samples?.journals || inspectionData.samples.journals.length === 0) && (
+                            <tr><td colSpan={4} className="text-center py-4 text-slate-400">لا توجد قيود يومية في هذا الملف</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -969,7 +1055,7 @@ export default function BackupRestorePage() {
               <span>تأكيد تصفير ومحو بيانات قاعدة البيانات</span>
             </div>
             <DialogDescription className="text-xs text-red-700 font-bold leading-relaxed bg-red-50 p-3 rounded-2xl border border-red-200">
-              ⚠️ تحذير شديد الخطورة: سيتم حذف كافة السجلات والمسافرين والعملاء والفواتير والسندات والقيود والعمليات بشكل نهائي. سيتم إنشاء نسخة احتياطية أمان تلقائياً قبل التصفير في مجلد النسخ.
+              ⚠️ تحذير شديد الخطورة: سيتم حذف كافة فواتير المبيعات، حركات المخزون، سندات الصرف والقبض، القيود اليومية، وسجلات العملاء والموردين بشكل نهائي. سيتم إنشاء نسخة احتياطية أمان تلقائياً قبل التصفير في مجلد النسخ.
             </DialogDescription>
           </DialogHeader>
 

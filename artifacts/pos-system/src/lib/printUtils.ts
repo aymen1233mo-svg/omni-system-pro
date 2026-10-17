@@ -5,6 +5,17 @@ import { tafqeet } from "./tafqeet";
 let cachedDocSettings: any = null;
 let cachedGenSettings: any = null;
 
+export function hexToRgba(hex?: string, alpha: number = 1): string {
+  let clean = (hex || "#2563eb").replace("#", "").trim();
+  if (clean.length === 3) {
+    clean = clean.split("").map(c => c + c).join("");
+  }
+  const r = parseInt(clean.substring(0, 2), 16) || 37;
+  const g = parseInt(clean.substring(2, 4), 16) || 99;
+  const b = parseInt(clean.substring(4, 6), 16) || 235;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function normalizeLogoUrl(url?: string | null, fallback?: string | null): string {
   const raw = (url ?? "").trim();
   if (raw === "/omnisystem_pro_logo_1784250216808.png" || raw === "/assets/images/omnisystem_pro_logo_1784250216808.png") {
@@ -717,7 +728,7 @@ export const saveA4HtmlAsPdf = saveA4PdfToFile;
 
 export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): string {
   const s = getEffectiveDocPrintSettings(settings);
-  const accentColor = s.accentColor || "#282425";
+  const accentColor = s.accentColor || s.accent_color || "#2563eb";
   const headerRight1 = s.headerRightText1 || s.companyName || "اسم النشاط التجاري";
   const headerRight2 = s.headerRightText2 || s.companySubtitle || "وصف اختياري - إدارة المخازن والمبيعات";
   const headerRight3 = s.headerRightText3 || s.companyPhone || "04-541474 - 773449820 - 737587221";
@@ -778,20 +789,20 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       width: 100%;
       max-width: 200mm;
       margin: 0 auto;
-      border: 3.5px solid #282425;
+      border: 3.5px solid ${accentColor};
       border-radius: 18px;
       overflow: hidden;
       background: #ffffff;
       position: relative;
     }
     
-    /* Top Arched Dark Header Banner Matching Image */
+    /* Top Arched Dark Header Banner Matching Accent Theme */
     .top-dark-banner {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 10px 18px 18px 18px;
       position: relative;
-      border-bottom: 4px solid #8b263e;
+      border-bottom: 4px solid ${accentColor};
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
@@ -819,7 +830,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       height: 82px;
       border-radius: 50%;
       background: #ffffff;
-      border: 3px solid #282425;
+      border: 3px solid ${accentColor};
       position: absolute;
       left: 50%;
       top: 6px;
@@ -846,7 +857,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2.5px solid #282425;
+      border-bottom: 2.5px solid ${accentColor};
       background: #fafaf9;
       gap: 15px;
     }
@@ -873,9 +884,9 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
     .inv-title-text {
       font-size: 19px;
       font-weight: 900;
-      color: #282425;
+      color: ${accentColor};
       letter-spacing: 0.5px;
-      border-bottom: 2.5px solid #282425;
+      border-bottom: 2.5px solid ${accentColor};
       padding-bottom: 2px;
       display: inline-block;
     }
@@ -889,7 +900,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       min-height: 380px;
     }
     .col-header-pill {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 8px 4px;
       border-radius: 8px;
@@ -899,7 +910,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       margin-bottom: 4px;
     }
     .col-vertical-box {
-      border: 2px solid #282425;
+      border: 2px solid ${accentColor};
       border-radius: 8px;
       min-height: 330px;
       background: #ffffff;
@@ -931,7 +942,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       align-items: center;
     }
     .total-pill-header {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 6px;
       border-radius: 6px;
@@ -940,7 +951,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
       font-weight: 900;
     }
     .total-value-box {
-      border: 2px solid #282425;
+      border: 2px solid ${accentColor};
       border-radius: 6px;
       padding: 6px;
       text-align: center;
@@ -964,7 +975,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
     }
 
     .bottom-signatures-bar {
-      border-top: 2px solid #282425;
+      border-top: 2px solid ${accentColor};
       padding: 12px 20px;
       background: #fafafa;
       display: flex;
@@ -1095,7 +1106,7 @@ export function generateWarehouseInvoiceA4Html(invoice: any, settings?: any): st
 
 export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): string {
   const s = getEffectiveDocPrintSettings(settings);
-  const accentColor = s.accentColor || "#282425";
+  const accentColor = s.accentColor || s.accent_color || "#2563eb";
   const headerRight1 = s.headerRightText1 || s.companyName || "اسم النشاط التجاري";
   const headerRight2 = s.headerRightText2 || s.companySubtitle || "وصف اختياري - إدارة المخازن والمشتريات";
   const headerRight3 = s.headerRightText3 || s.companyPhone || "04-541474 - 773449820 - 737587221";
@@ -1151,20 +1162,20 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       width: 100%;
       max-width: 200mm;
       margin: 0 auto;
-      border: 3.5px solid #282425;
+      border: 3.5px solid ${accentColor};
       border-radius: 18px;
       overflow: hidden;
       background: #ffffff;
       position: relative;
     }
     
-    /* Top Arched Dark Header Banner Matching Image */
+    /* Top Arched Dark Header Banner Matching Accent Theme */
     .top-dark-banner {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 10px 18px 18px 18px;
       position: relative;
-      border-bottom: 4px solid #8b263e;
+      border-bottom: 4px solid ${accentColor};
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
@@ -1192,7 +1203,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       height: 82px;
       border-radius: 50%;
       background: #ffffff;
-      border: 3px solid #282425;
+      border: 3px solid ${accentColor};
       position: absolute;
       left: 50%;
       top: 6px;
@@ -1219,7 +1230,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2.5px solid #282425;
+      border-bottom: 2.5px solid ${accentColor};
       background: #fafaf9;
       gap: 15px;
     }
@@ -1246,9 +1257,9 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
     .inv-title-text {
       font-size: 19px;
       font-weight: 900;
-      color: #282425;
+      color: ${accentColor};
       letter-spacing: 0.5px;
-      border-bottom: 2.5px solid #282425;
+      border-bottom: 2.5px solid ${accentColor};
       padding-bottom: 2px;
       display: inline-block;
     }
@@ -1262,7 +1273,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       min-height: 380px;
     }
     .col-header-pill {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 8px 4px;
       border-radius: 8px;
@@ -1272,7 +1283,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       margin-bottom: 4px;
     }
     .col-vertical-box {
-      border: 2px solid #282425;
+      border: 2px solid ${accentColor};
       border-radius: 8px;
       min-height: 330px;
       background: #ffffff;
@@ -1304,7 +1315,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       align-items: center;
     }
     .total-pill-header {
-      background: #282425;
+      background: ${accentColor};
       color: #ffffff;
       padding: 6px;
       border-radius: 6px;
@@ -1313,7 +1324,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
       font-weight: 900;
     }
     .total-value-box {
-      border: 2px solid #282425;
+      border: 2px solid ${accentColor};
       border-radius: 6px;
       padding: 6px;
       text-align: center;
@@ -1337,7 +1348,7 @@ export function generatePurchaseInvoiceA4Html(purchase: any, settings?: any): st
     }
 
     .bottom-signatures-bar {
-      border-top: 2px solid #282425;
+      border-top: 2px solid ${accentColor};
       padding: 12px 20px;
       background: #fafafa;
       display: flex;
@@ -3595,7 +3606,7 @@ export function generateVoucherStyle2A4Html(params: {
   const partyLabelEn = isReceipt ? "Received From Mr./Messrs:" : "Pay to Mr./Messrs:";
 
   // Dynamic Theme from document print settings
-  const accentColor = s.voucherAccentColor || s.accentColor || "#8b1d2c";
+  const accentColor = s.accentColor || s.accent_color || s.voucherAccentColor || "#2563eb";
   const burgundyAccent = accentColor;
   const badgeColor = accentColor;
 
@@ -3735,8 +3746,8 @@ export function generateVoucherStyle2A4Html(params: {
       text-align: right;
     }
     .date-shaded-box {
-      background: #fdf2f2;
-      border: 1px solid #fca5a5;
+      background: ${hexToRgba(burgundyAccent, 0.08)};
+      border: 1px solid ${hexToRgba(burgundyAccent, 0.35)};
       padding: 4px 10px;
       border-radius: 6px;
       font-weight: 900;
@@ -4036,8 +4047,8 @@ export function generateVoucherStyle2A4Html(params: {
       color: ${burgundyAccent};
     }
     .box-value-frame {
-      background: #fdf2f2;
-      border: 1.5px solid #fca5a5;
+      background: ${hexToRgba(burgundyAccent, 0.08)};
+      border: 1.5px solid ${hexToRgba(burgundyAccent, 0.35)};
       padding: 6px 14px;
       border-radius: 8px;
       font-size: 15px;
@@ -4069,7 +4080,7 @@ export function generateVoucherStyle2A4Html(params: {
     }
     .line-dotted-fill {
       flex: 1;
-      border-bottom: 2px dotted #fca5a5;
+      border-bottom: 2px dotted ${hexToRgba(burgundyAccent, 0.45)};
       font-weight: 800;
       font-size: 14px;
       color: #0f172a;
@@ -4078,8 +4089,8 @@ export function generateVoucherStyle2A4Html(params: {
     }
 
     .tafqeet-pink-container {
-      background: #fdf2f2;
-      border: 1.5px solid #fca5a5;
+      background: ${hexToRgba(burgundyAccent, 0.08)};
+      border: 1.5px solid ${hexToRgba(burgundyAccent, 0.35)};
       border-radius: 8px;
       padding: 10px 18px;
       display: flex;
@@ -4099,7 +4110,7 @@ export function generateVoucherStyle2A4Html(params: {
       font-size: 13.5px;
       font-weight: 900;
       color: ${burgundyAccent};
-      border-right: 1.5px solid #fca5a5;
+      border-right: 1.5px solid ${hexToRgba(burgundyAccent, 0.35)};
       padding-right: 14px;
       margin-right: 14px;
     }
@@ -4108,8 +4119,8 @@ export function generateVoucherStyle2A4Html(params: {
       display: flex;
       align-items: center;
       gap: 24px;
-      background: #fdf2f2;
-      border: 1.5px solid #fca5a5;
+      background: ${hexToRgba(burgundyAccent, 0.08)};
+      border: 1.5px solid ${hexToRgba(burgundyAccent, 0.35)};
       padding: 10px 18px;
       border-radius: 8px;
       font-weight: 900;
@@ -4349,7 +4360,7 @@ export function generateJournalVoucherA4Html(params: {
     agencyName = s.headerRightText1 || s.companyName || "اسم النشاط التجاري",
     agencyAddress = s.headerRightText2 || s.address || "",
   } = params;
-  const accentColor = s.accentColor || "#1e3a8a";
+  const accentColor = s.accentColor || s.accent_color || "#2563eb";
   const journalTitle = s.voucherJournalTitle || "سند قيد يومية";
   const logoHtml = (s.showLogo && s.logoUrl)
     ? `<img src="${s.logoUrl}" alt="Logo" style="max-height:60px; max-width:90px; object-fit:contain;" />`
@@ -4560,7 +4571,8 @@ export function generateJournalVoucherA4Html(params: {
       font-size: 12px;
     }
     .jv-table th {
-      background-color: #c7d2fe;
+      background-color: ${accentColor};
+      color: #ffffff;
       border: 1px solid #000;
       padding: 5px 4px;
       font-weight: 900;

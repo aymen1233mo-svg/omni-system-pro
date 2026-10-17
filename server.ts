@@ -68,9 +68,34 @@ export async function startServer(portOverride?: number) {
         res.status(404).json({ error: `API route not found: ${req.path}` });
         return;
       }
-      res.sendFile(path.join(distPath, "index.html"), (err) => {
-        if (err) next(err);
-      });
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath, (err) => {
+          if (err) next(err);
+        });
+      } else {
+        res.send(`<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>OmniSystem Pro ERP</title>
+  <style>
+    body { font-family: Tahoma, sans-serif; background: #f8fafc; color: #1e293b; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 500px; }
+    h1 { color: #2563eb; margin-bottom: 15px; }
+    p { color: #64748b; line-height: 1.6; }
+    .btn { display: inline-block; margin-top: 20px; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>OmniSystem Pro ERP</h1>
+    <p>جاري تشغيل النظام... إذا ظهرت هذه الرسالة، يرجى التأكد من تشغيل أمر بناء الواجهة (npm run build) أو تشغيل وضع التطوير.</p>
+    <a href="/login" class="btn">الانتقال لتسجيل الدخول</a>
+  </div>
+</body>
+</html>`);
+      }
     });
   }
 

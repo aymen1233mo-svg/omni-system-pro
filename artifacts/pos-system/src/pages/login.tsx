@@ -324,7 +324,22 @@ export default function Login() {
     loginMutation.mutate(
       { data: { username, password } },
       {
-        onSuccess: (data) => {
+        onSuccess: (data: any) => {
+          if (!data || !data.token || !data.user || data.licenseBlocked || data.success === false) {
+            const err = data?.error || data?.message || "فشل تسجيل الدخول: الجهاز غير مرخص أو الترخيص ملغي.";
+            toast({
+              variant: "destructive",
+              title: "غير مصرح",
+              description: err
+            });
+            if (data?.licenseBlocked || data?.isLicenseAlert) {
+              setLicenseModalTitle(data.title || "تنبيه ترخيص النظام");
+              setLicenseModalMessage(data.message || err);
+              setLicenseModalType(data.modalType || "expired");
+              setShowLicenseModal(true);
+            }
+            return;
+          }
           login(data.token, data.user);
           toast({
             title: "تم تسجيل الدخول بنجاح",
@@ -537,9 +552,9 @@ export default function Login() {
       </div>
 
       {/* ─── Main Application Body Layout ─── */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
         {/* 1. Left Sidebar: Promotional Showcase replacing the old fake navigation */}
-        <aside className="hidden lg:flex w-80 bg-gradient-to-b from-[#f8fafc] to-[#e2e8f0] border-l border-slate-300 flex-col py-6 shadow-inner relative overflow-y-auto custom-scrollbar">
+        <aside className="hidden xl:flex w-80 bg-gradient-to-b from-[#f8fafc] to-[#e2e8f0] border-l border-slate-300 flex-col py-6 shadow-inner relative overflow-y-auto custom-scrollbar">
           {/* Decorative geometric background */}
           <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none" />
           
@@ -610,7 +625,7 @@ export default function Login() {
         </aside>
 
         {/* 2. Center Branding Workspace (المساحة الوسطى الكبيرة بشعار أومني سيستم) */}
-        <section className="flex-1 bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] flex flex-col justify-between p-6 relative">
+        <section className="hidden md:flex flex-1 bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] flex-col justify-between p-6 relative">
           {/* خلفية هندسية مميزة */}
           <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none" />
           
@@ -644,9 +659,20 @@ export default function Login() {
         </section>
 
         {/* 3. Right Sidebar Control Panel (لوحة الدخول والتحكم والتبديل) */}
-        <aside className="w-full sm:w-[380px] lg:w-[400px] bg-white border-r border-slate-300 flex flex-col p-6 shadow-2xl justify-center z-20">
-          <div className="mb-6 text-center">
-            <h3 className="text-2xl font-black text-slate-800 mb-1">تسجيل الدخول</h3>
+        <aside className="w-full md:w-[380px] lg:w-[420px] bg-white border-r border-slate-300 flex flex-col p-4 sm:p-6 shadow-2xl justify-center z-20 min-h-screen md:min-h-0">
+          {/* Mobile Only Header Branding */}
+          <div className="md:hidden flex flex-col items-center text-center mb-5">
+            <div className="w-20 h-20 bg-white p-2 rounded-2xl shadow-md border border-slate-200 mb-2.5 flex items-center justify-center">
+              <AppLogo alt="Omni System Pro ERP Logo" className="w-full h-full object-contain" />
+            </div>
+            <h2 className="text-xl font-black text-slate-900">Omni System Pro ERP</h2>
+            <span className="text-[11px] text-blue-800 font-bold bg-blue-50 px-2.5 py-0.5 rounded-full mt-1 border border-blue-100">
+              نظام إدارة المخازن والمبيعات والحسابات
+            </span>
+          </div>
+
+          <div className="mb-4 sm:mb-6 text-center">
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-1">تسجيل الدخول</h3>
             <p className="text-xs font-bold text-slate-500">اختر العملية المطلوبة للبدء في استخدام النظام</p>
           </div>
 

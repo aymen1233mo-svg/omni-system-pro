@@ -1,26 +1,17 @@
 import { useState, useEffect } from "react";
 import { useGetSettings } from "@workspace/api-client-react";
-import omnisystemLogo from "@/assets/images/omnisystem_pro_logo_1784250216808.png";
-import omnisystemLogoNew from "@/assets/images/omnisystem_pro_logo_1786236882687.jpg";
-
 const LOGO_SOURCES = [
-  omnisystemLogoNew,
-  omnisystemLogo,
   "/omnisystem-logo.png",
-  "/assets/images/omnisystem_pro_logo_1786236882687.jpg",
-  "/assets/images/omnisystem_pro_logo_1784250216808.png",
   "/icon.png",
-  "/app-logo.png"
+  "/app-logo.png",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80"
 ];
 
 const ICON_SOURCES = [
-  omnisystemLogoNew,
-  omnisystemLogo,
   "/omnisystem-logo.png",
-  "/assets/images/omnisystem_pro_logo_1786236882687.jpg",
-  "/assets/images/omnisystem_pro_logo_1784250216808.png",
   "/icon.png",
-  "/app-icon.png"
+  "/app-icon.png",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80"
 ];
 
 interface LogoProps {

@@ -11,5 +11,6 @@ coverage/
 *.db-wal
 *.db-journal
 .cache/
+.aistudio/
 .env*
 !.env.example
