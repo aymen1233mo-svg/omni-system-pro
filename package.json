@@ -7,6 +7,7 @@
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
+    "deploy:netlify": "netlify deploy --filter @workspace/mockup-sandbox --config netlify.toml",
     "install:all": "npm install",
     "postinstall": "node -e \"if (process.env.ELECTRON_BUILD === '1') { try { require('child_process').execSync('npx electron-rebuild -f -w better-sqlite3', { stdio: 'inherit' }); } catch(e){} }\"",
     "dev": "tsx server.ts",

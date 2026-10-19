@@ -1,0 +1,7 @@
+[build]
+  base = "."
+  command = "pnpm exec vite build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
