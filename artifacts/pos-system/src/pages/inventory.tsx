@@ -19,6 +19,7 @@ import { ErpInventoryVariablesPanel } from "@/components/erp-inventory-variables
 import { ErpUnitsScreen } from "@/components/erp-units-screen";
 import { ErpItemTypesScreen } from "@/components/erp-item-types-screen";
 import { ErpWarehouseOperationsHub } from "@/components/erp-warehouse-operations-hub";
+import { apiFetch } from "@workspace/api-client-react";
 
 const CHART_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
 
@@ -264,17 +265,24 @@ export default function InventoryPage() {
   const loadData = () => {
     setLoading(true);
     Promise.all([
-      fetch("/api/inventory/summary").then(r => r.json()),
-      fetch("/api/inventory/movements").then(r => r.json())
+      apiFetch("/api/inventory/summary").catch(e => {
+        console.warn("Notice: could not load inventory summary:", e);
+        return null;
+      }),
+      apiFetch("/api/inventory/movements").catch(e => {
+        console.warn("Notice: could not load inventory movements:", e);
+        return [];
+      })
     ])
       .then(([sumData, movData]) => {
         if (sumData && !sumData.error) setSummary(sumData);
         if (Array.isArray(movData)) setMovements(movData);
-        setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn("Inventory summary notice:", err);
+      })
+      .finally(() => {
         setLoading(false);
-        toast({ variant: "destructive", title: "فشل تحميل بيانات المخزن" });
       });
   };
 

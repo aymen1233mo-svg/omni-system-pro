@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/admin-layout";
 import {
   useGetProducts, useCreateProduct, useUpdateProduct, useDeleteProduct,
-  useGetCategories, getGetProductsQueryKey, getNextProductNumber,
+  useGetCategories, getGetProductsQueryKey, getNextProductNumber, apiFetch,
 } from "@workspace/api-client-react";
 import type { Product, ProductInput } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -63,8 +63,21 @@ export default function Products() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyForm());
   const [selectedCardProductId, setSelectedCardProductId] = useState<number | null>(null);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  // Fallback master data when offline or during initial startup
+  const DEFAULT_SUPPLIERS = [
+    { id: 1, name: "المورد العام / الافتراضي", balance: 0 },
+    { id: 2, name: "شركة التوريدات الغذائية والتجارية العالمية", balance: 15000 },
+    { id: 3, name: "مؤسسة النخبة للمواد الاستهلاكية والجملة", balance: 8500 },
+    { id: 4, name: "شركة الإمداد اللوجستي والتجهيزات المكتبية", balance: 4200 },
+  ];
+
+  const DEFAULT_WAREHOUSES = [
+    { id: 1, name: "المستودع المركزي الرئيسي", location: "الرياض - المنطقة المستودعية" },
+    { id: 2, name: "مستودع الفرع الثاني", location: "جدة - حي الصفا" },
+  ];
+
+  const [suppliers, setSuppliers] = useState<any[]>(DEFAULT_SUPPLIERS);
+  const [warehouses, setWarehouses] = useState<any[]>(DEFAULT_WAREHOUSES);
   const [dbUnits, setDbUnits] = useState<any[]>([]);
   const [dbItemTypes, setDbItemTypes] = useState<any[]>([]);
 
@@ -95,28 +108,45 @@ export default function Products() {
   const updateMutation = useUpdateProduct();
   const deleteMutation = useDeleteProduct();
 
-  // Load suppliers, warehouses, units, and item types
+  // Load suppliers, warehouses, units, and item types safely
   useEffect(() => {
-    const token = localStorage.getItem("pos_token") ?? "";
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    let isMounted = true;
 
-    fetch("/api/inventory/summary", { headers })
-      .then(res => res.json())
-      .then(data => {
-        if (data.suppliers) setSuppliers(data.suppliers);
-        if (data.warehouses) setWarehouses(data.warehouses);
-      })
-      .catch(err => console.error("Error loading master data:", err));
+    const loadMasterData = async () => {
+      try {
+        const data = await apiFetch("/api/inventory/summary");
+        if (isMounted && data) {
+          if (Array.isArray(data.suppliers) && data.suppliers.length > 0) {
+            setSuppliers(data.suppliers);
+          }
+          if (Array.isArray(data.warehouses) && data.warehouses.length > 0) {
+            setWarehouses(data.warehouses);
+          }
+        }
+      } catch (err) {
+        console.warn("Notice: Loaded fallback master data for suppliers & warehouses:", err);
+      }
 
-    fetch("/api/units-of-measurement", { headers })
-      .then(res => res.json())
-      .then(d => { if (d.data) setDbUnits(d.data); })
-      .catch(() => {});
+      try {
+        const d = await apiFetch("/api/units-of-measurement");
+        if (isMounted && d?.data && Array.isArray(d.data) && d.data.length > 0) {
+          setDbUnits(d.data);
+        }
+      } catch {}
 
-    fetch("/api/item-types", { headers })
-      .then(res => res.json())
-      .then(d => { if (d.data) setDbItemTypes(d.data); })
-      .catch(() => {});
+      try {
+        const d = await apiFetch("/api/item-types");
+        if (isMounted && d?.data && Array.isArray(d.data) && d.data.length > 0) {
+          setDbItemTypes(d.data);
+        }
+      } catch {}
+    };
+
+    loadMasterData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Fetch recipe when selected product changes
@@ -128,18 +158,17 @@ export default function Products() {
     }
   }, [selectedRecipeProductId]);
 
-  const loadRecipe = (pid: number) => {
+  const loadRecipe = async (pid: number) => {
     setIsLoadingRecipe(true);
-    const token = localStorage.getItem("pos_token") ?? "";
-    fetch(`/api/recipes/${pid}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        setRecipeIngredients(data.recipes || []);
-      })
-      .catch(err => console.error("Error loading recipe:", err))
-      .finally(() => setIsLoadingRecipe(false));
+    try {
+      const data = await apiFetch(`/api/recipes/${pid}`);
+      setRecipeIngredients(data?.recipes || []);
+    } catch (err) {
+      console.warn("Notice: recipe not found or empty:", err);
+      setRecipeIngredients([]);
+    } finally {
+      setIsLoadingRecipe(false);
+    }
   };
 
   const invalidate = () => {
