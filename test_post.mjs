@@ -1,0 +1,17 @@
+import fetch from 'node-fetch';
+const run = async () => {
+  const res = await fetch('http://localhost:3000/api/travel/bus-bookings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer_id: 1,
+      guest_name: 'Test',
+      selling_price: 100,
+      cost_price: 80,
+    })
+  });
+  const data = await res.json();
+  console.log("Status:", res.status);
+  console.log("Data:", data);
+};
+run();
