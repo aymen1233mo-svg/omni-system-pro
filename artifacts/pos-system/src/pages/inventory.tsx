@@ -12,7 +12,7 @@ import {
   Package, AlertTriangle, ArrowDownRight, ArrowUpRight, Plus, RefreshCw, Search, 
   Layers, DollarSign, Warehouse, ArrowRightLeft, FileText, Trash2, CheckCircle2,
   Calendar, ShieldAlert, Sparkles, Building, Truck, RotateCcw, ClipboardList,
-  Printer, Download, Eye, ShieldCheck, XCircle, Clock, Send, Check
+  Printer, Download, Eye, ShieldCheck, XCircle, Clock, Send, Check, Tags
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { ErpInventoryVariablesPanel } from "@/components/erp-inventory-variables";
@@ -818,6 +818,12 @@ export default function InventoryPage() {
                 </div>
                 <Button size="sm" onClick={() => setShowFullInventoryModal(true)} variant="outline" className="text-xs gap-1 font-bold">
                   <Printer className="w-3.5 h-3.5" /> استعراض وطباعة كل الأصناف
+                </Button>
+                <Button size="sm" onClick={() => window.location.href = "/products"} variant="outline" className="text-xs gap-1 font-bold border-slate-300 text-blue-700">
+                  <Package className="w-3.5 h-3.5 text-blue-600" /> دليل وبطاقة الصنف (شاشة 50)
+                </Button>
+                <Button size="sm" onClick={() => window.location.href = "/categories"} variant="outline" className="text-xs gap-1 font-bold border-slate-300 text-amber-700">
+                  <Tags className="w-3.5 h-3.5 text-amber-600" /> إضافة تصنيفات أو أقسام
                 </Button>
                 <Button size="sm" onClick={() => setShowNewProductModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1">
                   <Plus className="w-3.5 h-3.5" /> إضافة صنف جديد للمخزن

@@ -795,6 +795,10 @@ export default function Products() {
                 <Printer className="w-4 h-4 text-blue-600" />
                 طباعة تقرير المنتجات والأقسام
               </Button>
+              <Button onClick={() => window.location.href = "/categories"} variant="outline" className="border-slate-300 text-slate-700 font-bold gap-1.5 text-xs">
+                <Tags className="w-4 h-4 text-amber-600" />
+                إضافة تصنيفات أو أقسام
+              </Button>
               <Button onClick={openAdd} className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2">
                 <Plus className="w-4 h-4" />
                 إضافة صنف مخزني

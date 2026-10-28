@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { flushSync } from "react-dom";
 import { PosLayout } from "@/components/pos-layout";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useGetProducts, useGetCategories, useCreateOrder, useGetSettings,
   useGetReceiptCopyConfigs, useGetDepartmentPrintConfigs, useCreatePrintLog,
@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Plus, Minus, Printer, ShoppingCart, X, UtensilsCrossed, Lock, KeyRound, ShieldCheck, Unlock, Camera, Search, FileText, Info, History, BarChart3, TrendingUp } from "lucide-react";
+import { Trash2, Plus, Minus, Printer, ShoppingCart, X, UtensilsCrossed, Lock, KeyRound, ShieldCheck, Unlock, Camera, Search, FileText, Info, History, BarChart3, TrendingUp, Tags, Package } from "lucide-react";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { cn } from "@/lib/utils";
 import { ReceiptPreview, MasterReceiptSlip, DeptReceiptSlip, ReceiptPrintArea } from "@/components/receipt";
@@ -339,6 +339,23 @@ export default function Pos() {
   const [isAuthorizingSupervisor, setIsAuthorizingSupervisor] = useState(false);
   const [showScannerDiagnostics, setShowScannerDiagnostics] = useState(false);
   const [scannerDiagnosticLogs, setScannerDiagnosticLogs] = useState<ScanDiagnosticLog[]>([]);
+
+  const qc = useQueryClient();
+
+  // ── إضافة منتج وقسم سريع من نقطة البيع ──
+  const [showQuickAddProduct, setShowQuickAddProduct] = useState(false);
+  const [quickProdName, setQuickProdName] = useState("");
+  const [quickProdPrice, setQuickProdPrice] = useState("");
+  const [quickProdCost, setQuickProdCost] = useState("");
+  const [quickProdBarcode, setQuickProdBarcode] = useState("");
+  const [quickProdCategory, setQuickProdCategory] = useState<number | null>(null);
+  const [quickProdStock, setQuickProdStock] = useState("100");
+  const [isSavingQuickProd, setIsSavingQuickProd] = useState(false);
+
+  const [showQuickAddCategory, setShowQuickAddCategory] = useState(false);
+  const [quickCatName, setQuickCatName] = useState("");
+  const [quickCatColor, setQuickCatColor] = useState("#f59e0b");
+  const [isSavingQuickCat, setIsSavingQuickCat] = useState(false);
 
   // ── استدعاء وإعادة طباعة آخر فاتورة مع التحكم بالصلاحيات ──
   const [showLastInvoiceModal, setShowLastInvoiceModal] = useState(false);
@@ -800,6 +817,98 @@ export default function Pos() {
       return newQty <= 0 ? null : { ...i, quantity: newQty };
     }).filter(Boolean) as CartItem[]);
   }, [setCart]);
+
+  const handleSaveQuickProduct = async () => {
+    if (!quickProdName.trim()) {
+      toast({ variant: "destructive", title: "تنبيه", description: "يرجى كتابة اسم المنتج" });
+      return;
+    }
+    const priceNum = parseFloat(quickProdPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast({ variant: "destructive", title: "تنبيه", description: "يرجى إدخال سعر بيع صحيح" });
+      return;
+    }
+    setIsSavingQuickProd(true);
+    try {
+      const token = localStorage.getItem("pos_token") ?? "";
+      const chosenCatId = quickProdCategory || selectedCategory || (categories[0]?.id ?? 1);
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: quickProdName.trim(),
+          price: priceNum,
+          cost: parseFloat(quickProdCost) || 0,
+          barcode: quickProdBarcode.trim() || undefined,
+          categoryId: chosenCatId,
+          stock: parseFloat(quickProdStock) || 100,
+          unit: "حبة",
+          is_sellable: true,
+          show_in_pos: true,
+          item_type: "sellable"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل حفظ المنتج");
+
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.refetchQueries({ queryKey: ["products"] });
+      toast({ title: "تمت إضافة الصنف بنجاح ✅", description: `تم حفظ "${data.name}" وأصبح متاحاً فوراً في نقطة البيع` });
+      setShowQuickAddProduct(false);
+      setQuickProdName("");
+      setQuickProdPrice("");
+      setQuickProdCost("");
+      setQuickProdBarcode("");
+
+      if (data && data.id) {
+        addToCart(data);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "خطأ في الإضافة", description: err.message });
+    } finally {
+      setIsSavingQuickProd(false);
+    }
+  };
+
+  const handleSaveQuickCategory = async () => {
+    if (!quickCatName.trim()) {
+      toast({ variant: "destructive", title: "تنبيه", description: "يرجى كتابة اسم التصنيف أو القسم" });
+      return;
+    }
+    setIsSavingQuickCat(true);
+    try {
+      const token = localStorage.getItem("pos_token") ?? "";
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: quickCatName.trim(),
+          color: quickCatColor || "#f59e0b"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل حفظ القسم");
+
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.refetchQueries({ queryKey: ["categories"] });
+      toast({ title: "تمت إضافة القسم بنجاح ✅", description: `تم حفظ القسم "${data.name}"` });
+      setShowQuickAddCategory(false);
+      setQuickCatName("");
+      if (data && data.id) {
+        setSelectedCategory(data.id);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "خطأ في الإضافة", description: err.message });
+    } finally {
+      setIsSavingQuickCat(false);
+    }
+  };
 
   const matchProductBarcode = (productBarcode: string | null | undefined, scannedCode: string): { matches: boolean; reason: string } => {
     if (!productBarcode) return { matches: false, reason: "المنتج لا يحتوي على باركود مسجل" };
@@ -2111,14 +2220,27 @@ export default function Pos() {
 
           {/* ── Categories bar ── */}
           <div className="bg-[#0f1e3c] px-2 py-1.5 shrink-0">
-            <p className="text-[10px] text-blue-300 font-semibold mb-1.5 px-1 flex items-center justify-between">
-              <span>المجموعات والأقسام</span>
-              {selectedCategory !== null && (
-                <span className="text-[9px] text-amber-300 cursor-pointer hover:underline" onClick={() => setSelectedCategory(null)}>
-                  عرض الكل
-                </span>
-              )}
-            </p>
+            <div className="text-[10px] text-blue-300 font-semibold mb-1.5 px-1 flex items-center justify-between">
+              <span className="flex items-center gap-1 font-bold text-amber-300">
+                <Tags className="w-3 h-3 text-amber-400" />
+                <span>إضافة تصنيفات أو أقسام</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddCategory(true)}
+                  className="text-[9px] text-amber-300 hover:text-white flex items-center gap-0.5 bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors font-bold cursor-pointer"
+                  title="إضافة قسم أو تصنيف جديد مباشرة"
+                >
+                  <Plus className="w-2.5 h-2.5" /> إضافة قسم
+                </button>
+                {selectedCategory !== null && (
+                  <span className="text-[9px] text-amber-300 cursor-pointer hover:underline" onClick={() => setSelectedCategory(null)}>
+                    عرض الكل
+                  </span>
+                )}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto no-scrollbar">
               <button
                 onClick={() => setSelectedCategory(null)}
@@ -2371,12 +2493,46 @@ export default function Pos() {
                 {userCanEmployeeMeal && (
                   <button
                     onClick={() => setMealMode(true)}
-                    className="mr-auto flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-amber-300 border border-amber-400/30 rounded hover:bg-amber-400/10 transition-colors"
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-amber-300 border border-amber-400/30 rounded hover:bg-amber-400/10 transition-colors"
                     title="وضع وجبات الموظفين"
                   >
                     <UtensilsCrossed className="w-3.5 h-3.5" />وجبة موظف
                   </button>
                 )}
+                
+                {/* Quick Add Product & Categories navigation */}
+                <div className="flex items-center gap-1.5 mr-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickProdCategory(selectedCategory || (categories[0]?.id ?? null));
+                      setShowQuickAddProduct(true);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-black bg-amber-400 hover:bg-amber-300 text-slate-950 rounded shadow-xs transition-colors cursor-pointer"
+                    title="إضافة منتج أو وجبة جديدة إلى نقطة البيع مباشرة"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إضافة منتج جديد</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open("/products", "_blank")}
+                    className="hidden sm:flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
+                    title="فتح دليل وبطاقة الأصناف والمنتجات الشاملة (شاشة 50)"
+                  >
+                    <Package className="w-3.5 h-3.5 text-blue-400" />
+                    <span>دليل الأصناف</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open("/categories", "_blank")}
+                    className="hidden md:flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
+                    title="فتح شاشة إضافة تصنيفات أو أقسام"
+                  >
+                    <Tags className="w-3.5 h-3.5 text-amber-400" />
+                    <span>إضافة تصنيفات أو أقسام</span>
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -3166,6 +3322,170 @@ export default function Pos() {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Quick Add Product (إضافة منتج سريع في POS) ── */}
+      <Dialog open={showQuickAddProduct} onOpenChange={setShowQuickAddProduct}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-amber-500" />
+              <span>إضافة منتج / وجبة جديدة إلى نقطة البيع</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3.5 py-2">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">اسم المنتج / الصنف *</label>
+              <Input
+                placeholder="مثال: شاورما دجاج صاروخ، برجر لحم دبل، عصير برتقال..."
+                value={quickProdName}
+                onChange={e => setQuickProdName(e.target.value)}
+                className="h-9 text-sm"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">سعر البيع ({currency}) *</label>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={quickProdPrice}
+                  onChange={e => setQuickProdPrice(e.target.value)}
+                  className="h-9 text-sm font-bold text-emerald-700"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">سعر التكلفة (اختياري)</label>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={quickProdCost}
+                  onChange={e => setQuickProdCost(e.target.value)}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700">القسم / التصنيف *</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickAddCategory(true);
+                  }}
+                  className="text-[11px] text-amber-600 hover:underline font-bold flex items-center gap-0.5"
+                >
+                  <Plus className="w-3 h-3" /> قسم جديد
+                </button>
+              </div>
+              <Select
+                value={quickProdCategory ? String(quickProdCategory) : (categories[0] ? String(categories[0].id) : "")}
+                onValueChange={v => setQuickProdCategory(Number(v))}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="اختر التصنيف أو القسم" />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                  {categories.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c.color || "#f59e0b" }} />
+                        <span>{c.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">الباركود أو الرمز (اختياري)</label>
+                <Input
+                  placeholder="امسح أو اترك فارغاً"
+                  value={quickProdBarcode}
+                  onChange={e => setQuickProdBarcode(e.target.value)}
+                  className="h-9 text-sm font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">الرصيد الافتتاحي</label>
+                <Input
+                  type="number"
+                  value={quickProdStock}
+                  onChange={e => setQuickProdStock(e.target.value)}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1">
+              <p className="font-bold text-slate-800">ℹ️ التكامل مع المخازن وبطاقة الصنف:</p>
+              <p>يتم حفظ الصنف فوراً في قاعدة البيانات المركزية، وربطه بالمستودع الرئيسي وتفعيله للبيع المباشر والظهور في POS تلقائياً.</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowQuickAddProduct(false)}>إلغاء</Button>
+            <Button
+              onClick={handleSaveQuickProduct}
+              disabled={isSavingQuickProd}
+              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold"
+            >
+              {isSavingQuickProd ? "جاري الحفظ..." : "حفظ وإضافة إلى السلة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Quick Add Category (إضافة تصنيفات أو أقسام) ── */}
+      <Dialog open={showQuickAddCategory} onOpenChange={setShowQuickAddCategory}>
+        <DialogContent dir="rtl" className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tags className="w-5 h-5 text-amber-500" />
+              <span>إضافة تصنيف أو قسم جديد</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">اسم التصنيف أو القسم *</label>
+              <Input
+                placeholder="مثال: وجبات رئيسية، مشروبات، ساندوتشات..."
+                value={quickCatName}
+                onChange={e => setQuickCatName(e.target.value)}
+                className="h-9 text-sm"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">لون تمييز القسم</label>
+              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border">
+                <input
+                  type="color"
+                  value={quickCatColor}
+                  onChange={e => setQuickCatColor(e.target.value)}
+                  className="w-8 h-8 rounded cursor-pointer border"
+                />
+                <span className="text-xs font-mono font-bold text-slate-700">{quickCatColor}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowQuickAddCategory(false)}>إلغاء</Button>
+            <Button
+              onClick={handleSaveQuickCategory}
+              disabled={isSavingQuickCat}
+              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold"
+            >
+              {isSavingQuickCat ? "جاري الحفظ..." : "حفظ القسم"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PosLayout>

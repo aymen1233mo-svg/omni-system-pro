@@ -317,7 +317,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         { name: "إدارة العملاء والشركات CRM", href: "/customers", icon: Users },
         { name: "كشف حساب المبيعات والعملاء التفصيلي", href: "/reports/cashier-statement", icon: FileSpreadsheet, highlight: true },
         { name: "عروض الأسعار والطلبيات Quotations", href: "/travel-quotations", icon: FileText },
-        { name: "تصنيفات المبيعات والمنتجات", href: "/categories", icon: Tags },
+        { name: "إضافة تصنيفات أو أقسام", href: "/categories", icon: Tags, highlight: true },
+        { name: "بطاقة وقائمة الأصناف والمنتجات", href: "/products", icon: Package },
         { name: "ورديات وشفتات الكاشير والصناديق", href: "/shifts", icon: Clock },
         { name: "إدارة الطاولات والجلسات (للمطاعم والمقاهي)", href: "/tables", icon: Utensils }
       ]
